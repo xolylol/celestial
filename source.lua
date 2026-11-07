@@ -25,8 +25,14 @@ Library.Categories = {}
 Library.Windows = {}
 
 -- ───────────────────────────── окружение ─────────────────────────────
-local genv = (getgenv and getgenv()) or _G
-if genv.CelestialLibrary and type(genv.CelestialLibrary.Unload) == "function" then
+-- getgenv есть не во всех исполнителях; библиотека должна работать и без него.
+local genv = _G
+if type(getgenv) == "function" then
+    local ok, env = pcall(getgenv)
+    if ok and type(env) == "table" then genv = env end
+end
+if type(genv.CelestialLibrary) == "table"
+    and type(genv.CelestialLibrary.Unload) == "function" then
     pcall(function() genv.CelestialLibrary:Unload() end)
 end
 genv.CelestialLibrary = Library
@@ -48,6 +54,9 @@ local HttpService = svc("HttpService")
 local Lighting = svc("Lighting")
 local TextService = svc("TextService")
 local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    error("[Celestial] Запускай библиотеку на клиенте Roblox (LocalScript / клиентский executor).", 0)
+end
 
 local function guiParent()
     if gethui then
@@ -64,7 +73,10 @@ local function guiParent()
         end
         pcall(function() probe:Destroy() end)
     end
-    return LocalPlayer:WaitForChild("PlayerGui")
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then playerGui = LocalPlayer:WaitForChild("PlayerGui", 10) end
+    if not playerGui then error("[Celestial] Не удалось получить PlayerGui.", 0) end
+    return playerGui
 end
 
 -- ───────────────────────────── локализация ─────────────────────────────
@@ -1313,9 +1325,11 @@ function Library:CreateWindow(o)
         BorderSizePixel = 0, Parent = side,
     })
     corner(avatar, 10)
-    pcall(function()
-        avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
-    end)
+    if LocalPlayer then
+        pcall(function()
+            avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
+        end)
+    end
     newText("TextLabel", {
         Position = UDim2.fromOffset(60, 14), Size = UDim2.new(1, -66, 0, 38), Text = W.Title, TextSize = 19, Parent = side,
     }, "Bold")
@@ -1971,7 +1985,8 @@ function Library:_updateWatermark()
         ping = math.floor(svc("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
     end)
     local txt = self._wmText or ((self.Window and self.Window.Title) or "Celestial")
-    self._wmLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms", txt, LocalPlayer.Name, self.FPS or 60, ping)
+    local playerName = LocalPlayer and LocalPlayer.Name or "Player"
+    self._wmLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms", txt, playerName, self.FPS or 60, ping)
 end
 
 function Library:GetTargetHud()
