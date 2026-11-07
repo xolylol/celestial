@@ -1,31 +1,21 @@
---[[
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║  Celestial UI Library for Roblox (Luau)                       ║
-    ║  Копия ClickGUI майнкрафт-клиента Celestial                   ║
-    ║  Загрузка:                                                    ║
-    ║  local Library = loadstring(game:HttpGet(                     ║
-    ║    "https://raw.githubusercontent.com/xolylol/celestial/"..   ║
-    ║    "main/source.lua"))()                                      ║
-    ║  Документация: GUIDE.md                                       ║
-    ╚═══════════════════════════════════════════════════════════════╝
-]]
+
 
 local Library = {}
 Library.__index = Library
 Library.Version = "1.0.0"
-Library.Folder = "Celestial"                       -- папка в workspace экзекутора
+Library.Folder = "Celestial"
 Library.IconBase = "https://raw.githubusercontent.com/xolylol/celestial/main/icons/"
-Library.Icons = {}                                 -- Library.Icons.combat = "rbxassetid://123" (необязательно)
+Library.Icons = {}
 Library.Language = "ru"                            -- "ru" | "en"
-Library.NotifyOnToggle = true                      -- уведомления при вкл/выкл модуля
-Library.ArrayListHide = { Render = true }          -- категории, скрытые в Array List
+Library.NotifyOnToggle = true
+Library.ArrayListHide = { Render = true }
 Library.Visible = false
 Library.Modules = {}
 Library.Categories = {}
 Library.Windows = {}
 
--- ───────────────────────────── окружение ─────────────────────────────
--- getgenv есть не во всех исполнителях; библиотека должна работать и без него.
+
+
 local genv = _G
 if type(getgenv) == "function" then
     local ok, env = pcall(getgenv)
@@ -55,7 +45,7 @@ local Lighting = svc("Lighting")
 local TextService = svc("TextService")
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
-    error("[Celestial] Запускай библиотеку на клиенте Roblox (LocalScript / клиентский executor).", 0)
+    error("[Celestial] Run this library on the Roblox client (LocalScript or client executor).", 0)
 end
 
 local function guiParent()
@@ -75,11 +65,11 @@ local function guiParent()
     end
     local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if not playerGui then playerGui = LocalPlayer:WaitForChild("PlayerGui", 10) end
-    if not playerGui then error("[Celestial] Не удалось получить PlayerGui.", 0) end
+    if not playerGui then error("[Celestial] Unable to access PlayerGui.", 0) end
     return playerGui
 end
 
--- ───────────────────────────── локализация ─────────────────────────────
+
 Library.Languages = {
     ru = {
         Search = "Поиск", Logout = "Выйти", Settings = "Настройка",
@@ -108,7 +98,7 @@ local function L(key)
 end
 Library.L = L
 
--- ───────────────────────────── палитра ─────────────────────────────
+
 local P = {
     Window = Color3.fromRGB(13, 13, 15),
     Panel = Color3.fromRGB(19, 19, 22),
@@ -128,7 +118,7 @@ local P = {
 }
 Library.Palette = P
 
--- ───────────────────────────── утилиты ─────────────────────────────
+
 local function create(class, props, children)
     local inst = Instance.new(class)
     local parent
@@ -267,7 +257,7 @@ function Library:MakeDraggable(handle, target, canDrag)
     end)
 end
 
--- ───────────────────────────── темы / градиенты ─────────────────────────────
+
 Library.Themes = {
     { Name = "Peach",    C1 = Color3.fromRGB(255, 178, 152), C2 = Color3.fromRGB(236, 128, 112) },
     { Name = "Sunset",   C1 = Color3.fromRGB(255, 150, 110), C2 = Color3.fromRGB(214, 88, 140) },
@@ -286,14 +276,14 @@ Library.Themes = {
 Library.Theme = {
     Mode = "client",                                -- "client" | "custom"
     Index = 1,
-    Custom1 = Color3.fromRGB(190, 101, 255),        -- -4299265 из сурсов
-    Custom2 = Color3.fromRGB(62, 21, 104),          -- -12708504 из сурсов
+    Custom1 = Color3.fromRGB(190, 101, 255),
+    Custom2 = Color3.fromRGB(62, 21, 104),
     Speed = 3, Blend = false, Blur = true, Glow = true,
 }
 
 Library._time = 0
-Library._grads = {}        -- градиенты внутри GUI (обновляются только когда меню открыто)
-Library._hudGrads = {}     -- градиенты HUD / уведомлений (обновляются всегда)
+Library._grads = {}
+Library._hudGrads = {}
 
 function Library:GetColors()
     local t = self.Theme
@@ -374,7 +364,7 @@ function Library:_syncThemeUI()
     end
 end
 
--- ───────────────────────────── иконки ─────────────────────────────
+
 local Glyphs = {
     combat = "⚔", movement = "➤", render = "◉", player = "☻", util = "✱", configs = "☰", themes = "◐",
     autobuy_items = "▦", autobuy_history = "↺", gear = "⚙", attach = "⚲", search = "⌕", folder = "▤",
@@ -454,7 +444,7 @@ Library._util = {
     svc = svc, guiParent = guiParent, ensureFolders = ensureFolders,
 }
 
--- ───────────────────────────── настройки (Container) ─────────────────────────────
+
 local Setting = {}
 Setting.__index = Setting
 
@@ -630,7 +620,7 @@ function Container:AddSlider(o)
     return s
 end
 
--- Mode (одиночный выбор) ------------------------------------------------
+
 local function expandable(self, s, height)
     local holder = create("Frame", {
         Name = s.Name, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
@@ -1317,7 +1307,7 @@ function Library:CreateWindow(o)
 
     local modal = create("TextButton", { Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Text = "", Modal = false, Parent = gui })
 
-    -- ── сайдбар ──
+
     local side = create("Frame", { Name = "Sidebar", Size = UDim2.new(0, 176, 1, 0), BackgroundTransparency = 1, Active = true, Parent = main })
     Library:MakeDraggable(side, main)
     local avatar = create("ImageLabel", {
@@ -1365,7 +1355,7 @@ function Library:CreateWindow(o)
         if W.OnLogout then safeCall(W.OnLogout) else Library:Unload() end
     end)
 
-    -- ── контент ──
+
     local content = create("Frame", { Name = "Content", Position = UDim2.fromOffset(176, 0), Size = UDim2.new(1, -176, 1, 0), BackgroundTransparency = 1, Parent = main })
     padding(content, 6, 12, 14, 12)
     local bar = create("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = content })
@@ -1403,7 +1393,7 @@ function Library:CreateWindow(o)
     W.Pages = pages
     W._cardW = math.floor((size.X - 208 - 10) / 2)
 
-    -- страница поиска
+
     local searchPage = create("ScrollingFrame", {
         Name = "SearchPage", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
         ScrollBarThickness = 3, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
@@ -1440,7 +1430,7 @@ function Library:CreateWindow(o)
     searchBox:GetPropertyChangedSignal("Text"):Connect(function() W:_applySearch(searchBox.Text) end)
     W.SearchBox = searchBox
 
-    -- ── popup настроек ──
+
     local popup = create("Frame", { Name = "Popup", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, ZIndex = 50, Parent = main })
     local dim = create("TextButton", {
         Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, Text = "",
@@ -1496,7 +1486,7 @@ function Library:CreateWindow(o)
     dim.MouseButton1Click:Connect(function() W:CloseSettings() end)
     pClose.MouseButton1Click:Connect(function() W:CloseSettings() end)
 
-    -- ── категории ──
+
     function W:AddCategory(c)
         c = c or {}
         local cat = setmetatable({
@@ -1593,7 +1583,7 @@ function Library:CreateWindow(o)
         end
     end)
 
-    -- ── настройки GUI (шестерёнка) ──
+
     local gs = newModuleCore(W, L("Settings"), "")
     W.GuiSettings = gs
     local T = Library.Theme
@@ -1635,7 +1625,7 @@ function Library:CreateWindow(o)
         if self._refreshThemes then self._refreshThemes() end
     end
 
-    -- ── показать / скрыть ──
+
     function W:Toggle(state)
         if state == nil then state = not self.Open end
         if state == self.Open then return end
@@ -1674,7 +1664,7 @@ function Library:CreateWindow(o)
     return W
 end
 
--- встроенные страницы -------------------------------------------------------
+
 function Window:AddThemes(o)
     o = o or {}
     local W = self
@@ -1801,7 +1791,7 @@ function Window:AddConfigs(o)
     })
 end
 
--- ───────────────────────────── HUD (уведомления, ArrayList, Watermark, TargetHud) ─────────────────────────────
+
 function Library:_hudGui()
     if self._hud and self._hud.Parent then return self._hud end
     local g = create("ScreenGui", {
@@ -2029,7 +2019,7 @@ function Library:GetTargetHud()
     return obj
 end
 
--- ───────────────────────────── конфиги ─────────────────────────────
+
 Library.MemoryConfigs = {}
 
 local function serializeSetting(s)
@@ -2182,7 +2172,7 @@ function Library:ListConfigs()
     return names
 end
 
--- ───────────────────────────── глобальный цикл / ввод ─────────────────────────────
+
 function Library:_start()
     if self._started then return end
     self._started = true
