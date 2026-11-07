@@ -1,3 +1,5 @@
+
+
 local Library = {}
 Library.__index = Library
 Library.Version = "1.0.0"
@@ -11,7 +13,10 @@ Library.NotifySound = true
 Library.ArrayListGlow = true
 Library.ArrayListOffset = 2
 Library.StudsPerBlock = 3.571
-Library.HudState = { Enabled = false, Watermark = true, ModuleBinds = true, Fps = true, Bps = true, Tps = true, Coords = true }
+Library.HudState = {
+    Enabled = false, Watermark = true, ModuleBinds = true, Fps = true, Bps = true, Tps = true, Coords = true,
+    Effects = true, EffectsMode = "Плавающий", ItemBinds = true, Cooldowns = true, Schedules = false,
+}
 Library.SoundVolume = 0.6
 Library.Sounds = {
     Enable = "sounds/module/module_enable.ogg",
@@ -113,13 +118,13 @@ Library.L = L
 
 
 local P = {
-    Window = Color3.fromRGB(9, 9, 11),
-    Panel = Color3.fromRGB(15, 15, 18),
-    Card = Color3.fromRGB(13, 13, 16),
-    CardHover = Color3.fromRGB(23, 23, 27),
+    Window = Color3.fromRGB(6, 6, 8),
+    Panel = Color3.fromRGB(12, 12, 15),
+    Card = Color3.fromRGB(8, 8, 10),
+    CardHover = Color3.fromRGB(19, 19, 23),
     Row = Color3.fromRGB(27, 27, 31),
     Group = Color3.fromRGB(18, 18, 21),
-    Stroke = Color3.fromRGB(40, 40, 46),
+    Stroke = Color3.fromRGB(30, 30, 36),
     Text = Color3.fromRGB(244, 244, 248),
     Sub = Color3.fromRGB(150, 150, 163),
     Dim = Color3.fromRGB(98, 98, 110),
@@ -1310,8 +1315,8 @@ local moduleCounter = 0
 
 local function fitGrid(page, grid, w0)
     local function apply()
-        local w = page.AbsoluteSize.X > 40 and (page.AbsoluteSize.X - 12 - 10) / 2 or w0
-        grid.CellSize = UDim2.fromOffset(math.floor(w), 54)
+        local w = page.AbsoluteSize.X > 40 and (page.AbsoluteSize.X - 14 - 9) / 2 or w0
+        grid.CellSize = UDim2.fromOffset(math.floor(w), 58)
     end
     apply()
     page:GetPropertyChangedSignal("AbsoluteSize"):Connect(apply)
@@ -1335,21 +1340,21 @@ function Category:AddModule(o)
         Name = "Card_" .. m.Name, BackgroundColor3 = P.Card, BorderSizePixel = 0, Text = "", AutoButtonColor = false,
         LayoutOrder = moduleCounter, Parent = self.Page,
     })
-    corner(card, 9)
+    corner(card, 8)
     local cardStroke = stroke(card, P.Stroke, 1, 0.35)
     local cardGrad = create("UIGradient", { Rotation = 20, Enabled = false, Parent = card })
     m._card = card
     m._home = self.Page
 
     local top = create("Frame", {
-        Position = UDim2.fromOffset(12, 7), Size = UDim2.new(1, -24, 0, 18), BackgroundTransparency = 1, Parent = card,
+        Position = UDim2.fromOffset(10, 8), Size = UDim2.new(1, -20, 0, 18), BackgroundTransparency = 1, Parent = card,
     })
     create("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
         SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5), Parent = top,
     })
     local title = newText("TextLabel", {
-        Size = UDim2.fromOffset(0, 18), AutomaticSize = Enum.AutomaticSize.X, Text = m.Name, TextSize = 14,
+        Size = UDim2.fromOffset(0, 18), AutomaticSize = Enum.AutomaticSize.X, Text = m.Name, TextSize = 15,
         LayoutOrder = 1, Parent = top,
     }, "SemiBold")
     local gear = makeIcon("gear", top, 13, P.Sub)
@@ -1361,9 +1366,9 @@ function Category:AddModule(o)
         TextSize = 10, TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = P.Sub, Text = "", Parent = card,
     }, "SemiBold")
     local desc = newText("TextLabel", {
-        Position = UDim2.fromOffset(12, 27), Size = UDim2.new(1, -24, 1, -30), Text = m.Description, TextSize = 10,
-        TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = P.Dim, Parent = card,
-    }, "Medium")
+        Position = UDim2.fromOffset(10, 29), Size = UDim2.new(1, -20, 1, -31), Text = m.Description, TextSize = 10,
+        TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(200, 200, 208), Parent = card,
+    }, "SemiBold")
     m._descLabel = desc
 
     m._renderBind = function()
@@ -1376,7 +1381,7 @@ function Category:AddModule(o)
         tween(card, 0.15, { BackgroundColor3 = on and P.White or P.Card })
         tween(cardStroke, 0.15, { Transparency = on and 1 or 0.35 })
         tween(title, 0.15, { TextColor3 = on and P.White or P.Text })
-        tween(desc, 0.15, { TextColor3 = on and Color3.fromRGB(255, 244, 240) or P.Dim })
+        tween(desc, 0.15, { TextColor3 = on and Color3.fromRGB(255, 244, 240) or Color3.fromRGB(200, 200, 208) })
         tween(bindLabel, 0.15, { TextColor3 = on and P.White or P.Sub })
         tintIcon(gear, on and P.White or P.Sub)
         tintIcon(clip, on and P.White or P.Sub)
@@ -1442,7 +1447,7 @@ function Library:CreateWindow(o)
     local W = setmetatable({ Categories = {}, _groupIndex = {}, _groupCount = 0, _persist = {}, Open = false, Library = Library }, Window)
     W.Title = o.Title or "Celestial"
     W.OnLogout = o.OnLogout
-    local size = o.Size or Vector2.new(700, 480)
+    local size = o.Size or Vector2.new(630, 530)
 
     local gui = create("ScreenGui", {
         Name = HttpService:GenerateGUID(false), ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -1457,7 +1462,9 @@ function Library:CreateWindow(o)
         Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
         Size = UDim2.fromOffset(size.X, size.Y), BackgroundTransparency = 1, Visible = false, Parent = gui,
     })
-    local glowImg = makeGlow(root, { Spread = 54, Transparency = 0.25 })
+    local glowImg2 = makeGlow(root, { Spread = 120, Transparency = 0.5 })   -- wide soft halo
+    local glowImg = makeGlow(root, { Spread = 72, Transparency = 0.04 })    -- dense inner glow
+    local function winGlow(on, t) glowShow(glowImg2, on, t) glowShow(glowImg, on, t) end
     local main = create("CanvasGroup", {
         Name = "Main", Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.Window, BackgroundTransparency = 0,
         BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 1, Parent = root,
@@ -1466,6 +1473,7 @@ function Library:CreateWindow(o)
     local glow = stroke(main, P.Stroke, 1, 0.35)
     W.Glow = glow
     W.GlowImage = glowImg
+    W.GlowImage2 = glowImg2
     local baseScale = o.Scale or 1
     pcall(function()
         local vp = workspace.CurrentCamera.ViewportSize
@@ -1478,33 +1486,33 @@ function Library:CreateWindow(o)
     local modal = create("TextButton", { Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Text = "", Modal = false, Parent = gui })
 
 
-    local side = create("Frame", { Name = "Sidebar", Size = UDim2.new(0, 176, 1, 0), BackgroundTransparency = 1, Active = true, Parent = main })
+    local side = create("Frame", { Name = "Sidebar", Size = UDim2.new(0, 172, 1, 0), BackgroundTransparency = 1, Active = true, Parent = main })
     Library:MakeDraggable(side, root)
     create("Frame", {
         Position = UDim2.new(1, -1, 0, 14), Size = UDim2.new(0, 1, 1, -28), BackgroundColor3 = P.Stroke,
         BackgroundTransparency = 0.45, BorderSizePixel = 0, Parent = side,
     })
     local logo = create("Frame", {
-        Position = UDim2.fromOffset(14, 14), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = P.White,
+        Position = UDim2.fromOffset(8, 10), Size = UDim2.fromOffset(47, 47), BackgroundColor3 = P.White,
         BorderSizePixel = 0, Parent = side,
     })
-    corner(logo, 10)
+    corner(logo, 12)
     local logoGrad = create("UIGradient", { Rotation = 45, Parent = logo })
     table.insert(W._persist, { logoGrad, 0.6 })
     logoGrad.Color = Library:_sequence(0.6)
-    local atom = makeIcon("atom32", logo, 26, P.White)
+    local atom = makeIcon("atom32", logo, 32, P.White)
     atom.AnchorPoint = Vector2.new(0.5, 0.5)
     atom.Position = UDim2.fromScale(0.5, 0.5)
     newText("TextLabel", {
-        Position = UDim2.fromOffset(60, 14), Size = UDim2.new(1, -66, 0, 38), Text = W.Title, TextSize = 19, Parent = side,
+        Position = UDim2.fromOffset(64, 10), Size = UDim2.new(1, -70, 0, 47), Text = W.Title, TextSize = 19, Parent = side,
     }, "Bold")
     local nav = create("ScrollingFrame", {
-        Name = "Nav", Position = UDim2.fromOffset(0, 62), Size = UDim2.new(1, 0, 1, -118), BackgroundTransparency = 1,
+        Name = "Nav", Position = UDim2.fromOffset(0, 66), Size = UDim2.new(1, 0, 1, -138), BackgroundTransparency = 1,
         BorderSizePixel = 0, ScrollBarThickness = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Parent = side,
     })
-    listLayout(nav, 3)
-    padding(nav, 12, 0, 12, 4)
+    listLayout(nav, 5)
+    padding(nav, 6, 0, 8, 4)
     W.Nav = nav
 
     local logoutGlow = makeGlow(side, { Spread = 30, Transparency = 0.1 })
@@ -1515,14 +1523,14 @@ function Library:CreateWindow(o)
     W.LogoutGlow = logoutGlow
 
     local logout = create("TextButton", {
-        Position = UDim2.new(0, 12, 1, -48), Size = UDim2.new(1, -24, 0, 34), BackgroundColor3 = P.White,
+        Position = UDim2.new(0, 6, 1, -44), Size = UDim2.new(1, -14, 0, 39), BackgroundColor3 = P.White,
         BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = side,
     })
-    corner(logout, 10)
-    local logoIcon = makeIcon("logout", logout, 18, P.Sub)
-    logoIcon.Position = UDim2.new(0, 10, 0.5, -9)
+    corner(logout, 11)
+    local logoIcon = makeIcon("logout", logout, 22, P.Sub)
+    logoIcon.Position = UDim2.new(0, 9, 0.5, -11)
     local logoText = newText("TextLabel", {
-        Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -44, 1, 0), Text = L("Logout"), TextSize = 13,
+        Position = UDim2.fromOffset(42, 0), Size = UDim2.new(1, -48, 1, 0), Text = L("Logout"), TextSize = 14,
         TextColor3 = P.Sub, Parent = logout,
     }, "SemiBold")
     logout.MouseEnter:Connect(function()
@@ -1538,56 +1546,56 @@ function Library:CreateWindow(o)
     end)
 
 
-    local content = create("Frame", { Name = "Content", Position = UDim2.fromOffset(176, 0), Size = UDim2.new(1, -176, 1, 0), BackgroundTransparency = 1, Parent = main })
-    padding(content, 6, 12, 14, 12)
-    local bar = create("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = content })
-    local searchBg = create("Frame", { Size = UDim2.new(1, -84, 1, 0), BackgroundColor3 = P.Panel, BorderSizePixel = 0, Parent = bar })
-    corner(searchBg, 11)
+    local content = create("Frame", { Name = "Content", Position = UDim2.fromOffset(172, 0), Size = UDim2.new(1, -172, 1, 0), BackgroundTransparency = 1, Parent = main })
+    padding(content, 15, 17, 20, 14)
+    local bar = create("Frame", { Size = UDim2.new(1, 0, 0, 33), BackgroundTransparency = 1, Parent = content })
+    local searchBg = create("Frame", { Size = UDim2.new(1, -72, 1, 0), BackgroundColor3 = P.Panel, BorderSizePixel = 0, Parent = bar })
+    corner(searchBg, 10)
     stroke(searchBg, P.Stroke, 1, 0.4)
-    local sIcon = makeIcon("search", searchBg, 15, P.Sub)
-    sIcon.Position = UDim2.new(0, 11, 0.5, -7)
+    local sIcon = makeIcon("search", searchBg, 17, P.Sub)
+    sIcon.Position = UDim2.new(0, 11, 0.5, -8)
     local searchBox = newText("TextBox", {
-        Position = UDim2.fromOffset(34, 0), Size = UDim2.new(1, -44, 1, 0), PlaceholderText = L("Search"),
-        PlaceholderColor3 = P.Sub, TextSize = 13, ClearTextOnFocus = false, Parent = searchBg,
+        Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -48, 1, 0), PlaceholderText = L("Search"),
+        PlaceholderColor3 = P.Sub, TextSize = 14, ClearTextOnFocus = false, Parent = searchBg,
     }, "Medium")
     local folderBtn = create("TextButton", {
-        AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -40, 0, 0), Size = UDim2.fromOffset(36, 36),
+        AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -34, 0, 0), Size = UDim2.fromOffset(30, 33),
         BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = bar,
     })
     corner(folderBtn, 11)
-    local fIcon = makeIcon("folder", folderBtn, 17, P.Sub)
-    fIcon.Position = UDim2.new(0.5, -8, 0.5, -8)
+    local fIcon = makeIcon("folder", folderBtn, 21, P.Sub)
+    fIcon.Position = UDim2.new(0.5, -10, 0.5, -10)
     local gearBtn = create("TextButton", {
-        AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(36, 36),
+        AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(30, 33),
         BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = bar,
     })
     corner(gearBtn, 11)
-    local gIcon = makeIcon("gear", gearBtn, 17, P.Sub)
-    gIcon.Position = UDim2.new(0.5, -8, 0.5, -8)
+    local gIcon = makeIcon("gear", gearBtn, 21, P.Sub)
+    gIcon.Position = UDim2.new(0.5, -10, 0.5, -10)
     for _, pair in ipairs({ { folderBtn, fIcon }, { gearBtn, gIcon } }) do
         pair[1].MouseEnter:Connect(function() tintIcon(pair[2], P.White) end)
         pair[1].MouseLeave:Connect(function() tintIcon(pair[2], P.Sub) end)
     end
 
     local pages = create("Frame", {
-        Name = "Pages", Position = UDim2.fromOffset(0, 48), Size = UDim2.new(1, 0, 1, -48), BackgroundTransparency = 1,
+        Name = "Pages", Position = UDim2.fromOffset(0, 55), Size = UDim2.new(1, 0, 1, -55), BackgroundTransparency = 1,
         ClipsDescendants = true, Parent = content,
     })
     W.Pages = pages
-    W._cardW = math.floor((size.X - 208 - 10) / 2)
+    W._cardW = math.floor((size.X - 172 - 35 - 14 - 9) / 2)
 
 
     local searchPage = create("ScrollingFrame", {
         Name = "SearchPage", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
-        ScrollBarThickness = 3, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
+        ScrollBarThickness = 4, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
         AutomaticCanvasSize = Enum.AutomaticSize.Y, VerticalScrollBarInset = Enum.ScrollBarInset.None,
         Visible = false, Parent = pages,
     })
     local sGrid = create("UIGridLayout", {
-        SortOrder = Enum.SortOrder.LayoutOrder, CellPadding = UDim2.fromOffset(10, 10), CellSize = UDim2.fromOffset(W._cardW, 54),
+        SortOrder = Enum.SortOrder.LayoutOrder, CellPadding = UDim2.fromOffset(9, 7), CellSize = UDim2.fromOffset(W._cardW, 58),
         Parent = searchPage,
     })
-    padding(searchPage, 0, 2, 12, 10)
+    padding(searchPage, 0, 2, 14, 10)
     fitGrid(searchPage, sGrid, W._cardW)
     W.SearchPage = searchPage
 
@@ -1691,25 +1699,26 @@ function Library:CreateWindow(o)
             self._groupCount = self._groupCount + 1
             gi = self._groupCount
             self._groupIndex[cat.Group] = gi
-            newText("TextLabel", {
-                Name = "Header_" .. cat.Group, Size = UDim2.new(1, 0, 0, 24), Text = cat.Group, TextSize = 11,
-                TextColor3 = P.Dim, LayoutOrder = gi * 1000, Parent = nav,
+            local hdr = newText("TextLabel", {
+                Name = "Header_" .. cat.Group, Size = UDim2.new(1, 0, 0, 28), Text = cat.Group, TextSize = 11,
+                TextColor3 = Color3.fromRGB(150, 150, 162), LayoutOrder = gi * 1000, Parent = nav,
             }, "SemiBold")
+            padding(hdr, 4, 0, 0, 0)
         end
         cat._order = gi * 1000 + #self.Categories + 1
         local btn = create("TextButton", {
-            Name = "Nav_" .. cat.Name, Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Text = "",
+            Name = "Nav_" .. cat.Name, Size = UDim2.new(1, 0, 0, 39), BackgroundTransparency = 1, Text = "",
             AutoButtonColor = false, LayoutOrder = cat._order, Parent = nav,
         })
         local fill = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BackgroundTransparency = 1, BorderSizePixel = 0, Parent = btn })
-        corner(fill, 10)
+        corner(fill, 11)
         local fg = create("UIGradient", { Rotation = 0, Parent = fill })
         table.insert(self._persist, { fg, 0.6 })
         fg.Color = Library:_sequence(0.6)
-        local icon = makeIcon(cat.Icon, btn, 18, P.Sub)
-        icon.Position = UDim2.new(0, 11, 0.5, -9)
+        local icon = makeIcon(cat.Icon, btn, 22, P.Sub)
+        icon.Position = UDim2.new(0, 9, 0.5, -11)
         local lbl = newText("TextLabel", {
-            Position = UDim2.fromOffset(40, 0), Size = UDim2.new(1, -46, 1, 0), Text = cat.Name, TextSize = 13,
+            Position = UDim2.fromOffset(42, 0), Size = UDim2.new(1, -48, 1, 0), Text = cat.Name, TextSize = 14,
             TextColor3 = P.Sub, Parent = btn,
         }, "SemiBold")
         cat.Button, cat._fill, cat._icon, cat._label = btn, fill, icon, lbl
@@ -1732,15 +1741,15 @@ function Library:CreateWindow(o)
         else
             local page = create("ScrollingFrame", {
                 Name = "Page_" .. cat.Name, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
-                ScrollBarThickness = 3, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
+                ScrollBarThickness = 4, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
                 AutomaticCanvasSize = Enum.AutomaticSize.Y, VerticalScrollBarInset = Enum.ScrollBarInset.None,
                 Visible = false, Parent = pages,
             })
             local grid = create("UIGridLayout", {
-                SortOrder = Enum.SortOrder.LayoutOrder, CellPadding = UDim2.fromOffset(10, 10),
-                CellSize = UDim2.fromOffset(self._cardW, 54), Parent = page,
+                SortOrder = Enum.SortOrder.LayoutOrder, CellPadding = UDim2.fromOffset(9, 7),
+                CellSize = UDim2.fromOffset(self._cardW, 58), Parent = page,
             })
-            padding(page, 0, 2, 12, 10)
+            padding(page, 0, 2, 14, 10)
             fitGrid(page, grid, self._cardW)
             cat.Page = page
         end
@@ -1811,7 +1820,7 @@ function Library:CreateWindow(o)
     end })
     gs:AddToggle({ Name = L("Glow"), Default = T.Glow, Callback = function(v)
         T.Glow = v
-        glowShow(glowImg, v and W.Open, 0.2)
+        winGlow(v and W.Open, 0.2)
     end })
     W.MenuKey = gs:AddKeybind({ Name = L("OpenMenu"), Default = o.Keybind or Enum.KeyCode.RightShift })
     gearBtn.MouseButton1Click:Connect(function() W:OpenSettings(gs) end)
@@ -1835,12 +1844,12 @@ function Library:CreateWindow(o)
             modal.Modal = true
             uiScale.Scale = baseScale * 0.94
             tween(main, 0.2, { GroupTransparency = 0 })
-            glowShow(glowImg, Library.Theme.Glow, 0.25)
+            winGlow(Library.Theme.Glow, 0.25)
             tween(uiScale, 0.2, { Scale = baseScale }, Enum.EasingStyle.Back)
         else
             self:CloseSettings(true)
             tween(main, 0.16, { GroupTransparency = 1 })
-            glowShow(glowImg, false, 0.16)
+            winGlow(false, 0.16)
             tween(uiScale, 0.16, { Scale = baseScale * 0.96 })
             task.delay(0.18, function()
                 if not self.Open then
@@ -1934,7 +1943,7 @@ function Window:AddConfigs(o)
             ai.Position = UDim2.new(0.5, -8, 0.5, -8)
             local list = create("ScrollingFrame", {
                 Position = UDim2.fromOffset(0, 46), Size = UDim2.new(1, 0, 1, -46), BackgroundTransparency = 1,
-                BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
+                BorderSizePixel = 0, ScrollBarThickness = 4, ScrollBarImageColor3 = P.Dim, CanvasSize = UDim2.new(),
                 AutomaticCanvasSize = Enum.AutomaticSize.Y, VerticalScrollBarInset = Enum.ScrollBarInset.None, Parent = page,
             })
             listLayout(list, 8)
@@ -2200,23 +2209,21 @@ function Library:SetWatermark(state, text)
             Name = "Watermark", Position = UDim2.fromOffset(6, 6), Size = UDim2.fromOffset(0, 28),
             AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Parent = hud,
         })
-        makeGlow(root, { Spread = 16, Transparency = 0.3 })
+        local wg = makeGlow(root, { Spread = 12, Transparency = 0.4, Color = P.White })
+        local wgg = create("UIGradient", { Parent = wg })
+        self:BindGradient(wgg, 0.8, true)
         local card = create("Frame", {
-            Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = Color3.fromRGB(9, 9, 12),
-            BackgroundTransparency = 0.08, BorderSizePixel = 0, ZIndex = 1, Parent = root,
+            Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = Color3.fromRGB(4, 4, 6),
+            BackgroundTransparency = 0.03, BorderSizePixel = 0, ZIndex = 1, Parent = root,
         })
-        corner(card, 8)
-        local st = stroke(card, P.White, 1, 0.45)
+        corner(card, 7)
+        local st = stroke(card, P.White, 1.6, 0)
         local sg = create("UIGradient", { Parent = st })
         self:BindGradient(sg, 0.8, true)
-        local tint = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BackgroundTransparency = 0.88, BorderSizePixel = 0, ZIndex = 1, Parent = card })
-        corner(tint, 8)
-        local tg = create("UIGradient", { Parent = tint })
-        self:BindGradient(tg, 0.8, true)
         self._wmLabel = newText("TextLabel", {
             Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, TextSize = 13, RichText = true,
             ZIndex = 2, Parent = card,
-        }, "SemiBold")
+        }, "Bold")
         padding(self._wmLabel, 10, 0, 10, 0)
         self._wm = root
         self:_registerWidget("Watermark", root, card)
@@ -2228,9 +2235,9 @@ end
 function Library:_updateWatermark()
     if not (self._wm and self._wm.Parent and self._wmOn) then return end
     local title = tostring(self._wmText or ((self.Window and self.Window.Title) or "Celestial")):upper()
-    local sep = ' <font color="#8d8d99">»</font> '
+    local sep = ' <font color="#d9d9e0">»</font> '
     local parts = {
-        string.format('<font color="#%s">%s</font>', self:ColorAt(0):ToHex(), title),
+        title,
         LocalPlayer and LocalPlayer.Name or "Player",
         "UID: " .. tostring(LocalPlayer and LocalPlayer.UserId or 0),
         os.date("%I:%M %p"),
@@ -2260,6 +2267,74 @@ function Library:_refreshKeybinds()
     local w = self:_keybindsWidget()
     w:SetEntries(list)
     w:SetShown(#list > 0 or self.Visible == true)
+end
+
+-- ───────────────────────────── generic HUD lists: Potions / Item Binds / Cooldowns / Schedules ─────────────────────────────
+Library._hudListDefs = {
+    { key = "Effects", title = "Potions", flag = "Effects", pos = UDim2.fromOffset(24, 380) },
+    { key = "ItemBinds", title = "Item Binds", flag = "ItemBinds", pos = UDim2.fromOffset(210, 260) },
+    { key = "Cooldowns", title = "Cooldowns", flag = "Cooldowns", pos = UDim2.fromOffset(210, 380) },
+    { key = "Schedules", title = "Schedules", flag = "Schedules", pos = UDim2.fromOffset(210, 500) },
+}
+Library._hudEntries = {}
+Library._hudLists = {}
+Library.Effects = {}
+
+-- feed any of the lists: Library:SetHudEntries("Cooldowns", { { Text = "Ender Pearl", Right = "0:12" } })
+function Library:SetHudEntries(key, list)
+    self._hudEntries[key] = list
+    self:_refreshHudLists()
+end
+
+function Library:_refreshHudLists()
+    local S = self.HudState
+    for _, d in ipairs(self._hudListDefs) do
+        local list = self._hudEntries[d.key] or {}
+        local w = self._hudLists[d.key]
+        if S.Enabled and S[d.flag] then
+            if not w or not w.Frame.Parent then
+                w = self:CreateHudWidget({ Name = d.key, Title = d.title, Width = 170, Position = d.pos })
+                self._hudLists[d.key] = w
+            end
+            if d.key == "Effects" then
+                -- "Режим": Плавающий = draggable, Стандартный = pinned at the top-right
+                local pinned = S.EffectsMode == "Стандартный"
+                w.Frame:SetAttribute("Locked", pinned)
+                if pinned then w.Frame.Position = UDim2.new(1, -190, 0, 300) end
+            end
+            w:SetEntries(list)
+            w:SetShown(#list > 0 or self.Visible == true)
+        elseif w and w.Frame.Parent then
+            w:SetShown(false)
+        end
+    end
+end
+
+-- potion-like timed effects: Library:AddEffect("Fire Resistance", 299)
+function Library:AddEffect(name, seconds, color)
+    self.Effects[name] = { expire = os.clock() + seconds, color = color }
+    self._effT = 0
+end
+function Library:RemoveEffect(name)
+    self.Effects[name] = nil
+    self._effT = 0
+end
+function Library:_tickEffects()
+    local now = os.clock()
+    if now - (self._effT or 0) < 0.25 then return end
+    self._effT = now
+    local list = {}
+    for name, e in pairs(self.Effects) do
+        local left = e.expire - now
+        if left <= 0 then
+            self.Effects[name] = nil
+        else
+            local sec = math.ceil(left)
+            list[#list + 1] = { Text = name, Right = string.format("%d:%02d", sec // 60, sec % 60), left = left, RightColor = left < 10 and P.Danger or P.White }
+        end
+    end
+    table.sort(list, function(a, b) return a.left > b.left end)
+    self:SetHudEntries("Effects", list)
 end
 
 -- ───────────────────────────── Info (Coords / BPS / FPS / TPS, bottom-left) ─────────────────────────────
@@ -2319,6 +2394,7 @@ function Library:_applyHud()
     local S = self.HudState
     self:SetWatermark(S.Enabled and S.Watermark)
     self:_refreshKeybinds()
+    self:_refreshHudLists()
     self:_tickInfo()
 end
 
@@ -2340,6 +2416,11 @@ function Library:LinkHud(m)
     end
     bind("Ватермарк", "Включено", "Watermark")
     bind("Бинды модулей", "Включено", "ModuleBinds")
+    bind("Эффекты", "Включено", "Effects")
+    bind("Эффекты", "Режим", "EffectsMode")
+    bind("Бинды предметов", "Включено", "ItemBinds")
+    bind("Задержки", "Включено", "Cooldowns")
+    bind("Расписания", "Включено", "Schedules")
     bind("Информация", "Координаты", "Coords")
     bind("Информация", "Фпс", "Fps")
     bind("Информация", "Бпс", "Bps")
@@ -2407,7 +2488,7 @@ function Library:_registerWidget(name, root, handle)
     root.Destroying:Connect(function()
         if self._widgets and self._widgets[name] == root then self._widgets[name] = nil end
     end)
-    self:MakeDraggable(handle or root, root, function() return Library.Visible end)
+    self:MakeDraggable(handle or root, root, function() return Library.Visible and not root:GetAttribute("Locked") end)
 end
 
 -- HudWidget (port of core HudWidget): draggable (while the menu is open) panel with title + rows
@@ -2419,64 +2500,54 @@ function Library:CreateHudWidget(o)
         Name = name, Position = o.Position or UDim2.fromOffset(20, 220), Size = UDim2.fromOffset(o.Width or 170, 0),
         AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = hud,
     })
-    local glowImg = makeGlow(root, { Spread = 26, Transparency = 0.4 })
+    -- gradient glow (same colours as the menu, bound to the hud gradient set)
+    local glowImg = makeGlow(root, { Spread = 14, Transparency = 0.45, Color = P.White })
+    local gg = create("UIGradient", { Parent = glowImg })
+    self:BindGradient(gg, 0.8, true)
     local card = create("CanvasGroup", {
         Name = "Card", Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = Color3.fromRGB(11, 11, 14), BackgroundTransparency = 0.05, BorderSizePixel = 0,
+        BackgroundColor3 = Color3.fromRGB(4, 4, 6), BackgroundTransparency = 0.03, BorderSizePixel = 0,
         ZIndex = 1, Parent = root,
     })
-    corner(card, 10)
-    stroke(card, P.Stroke, 1, 0.45)
+    corner(card, 7)
+    local st = stroke(card, P.White, 1.6, 0)
+    local sg = create("UIGradient", { Parent = st })
+    self:BindGradient(sg, 0.8, true)
     listLayout(card, 0)
-    local titleLabel
-    local head
-    if o.Style == "pill" then
-        head = create("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = 0, Parent = card })
-        padding(head, 4, 4, 4, 0)
-        local fillH = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = head })
-        corner(fillH, 8)
-        local hg = create("UIGradient", { Rotation = 0, Parent = fillH })
-        self:BindGradient(hg, 0.8, true)
-        titleLabel = newText("TextLabel", {
-            Size = UDim2.fromScale(1, 1), Text = o.Title or name, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center,
-            Parent = fillH,
-        }, "Bold")
-    else
-        head = create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 0, Parent = card })
-        titleLabel = newText("TextLabel", {
-            Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), Text = o.Title or name, TextSize = 12,
-            Parent = head,
-        }, "Bold")
-        local line = create("Frame", {
-            AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, 0), Size = UDim2.new(1, -16, 0, 2),
-            BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = head,
-        })
-        corner(line, 1)
-        local lg = create("UIGradient", { Parent = line })
-        self:BindGradient(lg, 0.8, true)
-    end
+    local head = create("Frame", { Size = UDim2.new(1, 0, 0, 24), BackgroundColor3 = P.White, BorderSizePixel = 0, LayoutOrder = 0, Parent = card })
+    local hg = create("UIGradient", { Parent = head })
+    self:BindGradient(hg, 0.8, true)
+    local titleLabel = newText("TextLabel", {
+        Size = UDim2.fromScale(1, 1), Text = o.Title or name, TextSize = 14, TextColor3 = P.White,
+        TextXAlignment = Enum.TextXAlignment.Center, Parent = head,
+    }, "Bold")
     local body = create("Frame", {
         Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 1, Parent = card,
     })
-    listLayout(body, 2)
-    padding(body, 10, 6, 10, 8)
+    listLayout(body, 1)
+    padding(body, 8, 4, 8, 5)
 
-    local w = { Frame = root, Card = card, Body = body, Name = name, Shown = true }
+    local w = { Frame = root, Card = card, Body = body, Name = name, Shown = true, _sig = nil }
     function w:SetEntries(list)
-        for _, c in ipairs(body:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+        local parts = {}
         if #list == 0 and o.EmptyText then list = { { Text = o.EmptyText, Color = P.Dim } } end
+        for i, e in ipairs(list) do parts[i] = tostring(e.Text) .. "\0" .. tostring(e.Right or "") end
+        local sig = table.concat(parts, "\1")
+        if sig == self._sig then return end
+        self._sig = sig
+        for _, c in ipairs(body:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
         for i, e in ipairs(list) do
-            local row = create("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, LayoutOrder = i, Parent = body })
+            local row = create("Frame", { Size = UDim2.new(1, 0, 0, 17), BackgroundTransparency = 1, LayoutOrder = i, Parent = body })
             newText("TextLabel", {
                 Size = UDim2.new(1, e.Right and -66 or 0, 1, 0), Text = tostring(e.Text), TextSize = 12,
-                TextColor3 = e.Color or P.Text, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
-            }, "Medium")
+                TextColor3 = e.Color or P.White, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
+            }, "Bold")
             if e.Right then
                 newText("TextLabel", {
                     AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 64, 1, 0),
-                    Text = tostring(e.Right), TextSize = 11, TextColor3 = e.RightColor or P.Sub,
+                    Text = tostring(e.Right), TextSize = 12, TextColor3 = e.RightColor or P.White,
                     TextXAlignment = Enum.TextXAlignment.Right, Parent = row,
-                }, "SemiBold")
+                }, "Bold")
             end
         end
     end
@@ -2587,6 +2658,7 @@ end
 -- shows a preview of the target hud while the menu is open so it can be dragged
 function Library:_hudPreview(state)
     self:_refreshKeybinds()
+    self:_refreshHudLists()
     local t = self._target
     if not (t and t.Frame.Parent) then return end
     if state then
@@ -2774,6 +2846,7 @@ function Library:_start()
             if next(self._hudGrads) then self:_updateSet(self._hudGrads) end
             self:_tickArray()
             self:_tickInfo()
+            self:_tickEffects()
         end
         frames = frames + 1
         fpsAcc = fpsAcc + dt
