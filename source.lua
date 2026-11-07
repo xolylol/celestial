@@ -4,7 +4,16 @@ local Library = {}
 Library.__index = Library
 Library.Version = "1.0.0"
 Library.Folder = "Celestial"
-Library.IconBase = "https://raw.githubusercontent.com/xolylol/celestial/main/icons/"
+Library.AssetBase = "https://raw.githubusercontent.com/xolylol/celestial/main/"
+Library.IconBase = Library.AssetBase .. "icons/"
+Library.GlowColor = Color3.new(0, 0, 0)            -- assets/glow.png is white, it gets tinted with ImageColor3
+Library.SoundsEnabled = true
+Library.SoundVolume = 0.6
+Library.Sounds = {
+    Enable = "sounds/module/module_enable.ogg",
+    Disable = "sounds/module/module_disable.ogg",
+    Notification = "sounds/notifications/notification.ogg",
+}
 Library.Icons = {}
 Library.Language = "ru"                            -- "ru" | "en"
 Library.NotifyOnToggle = true
@@ -100,13 +109,13 @@ Library.L = L
 
 
 local P = {
-    Window = Color3.fromRGB(13, 13, 15),
-    Panel = Color3.fromRGB(19, 19, 22),
-    Card = Color3.fromRGB(24, 24, 27),
-    CardHover = Color3.fromRGB(33, 33, 37),
+    Window = Color3.fromRGB(9, 9, 11),
+    Panel = Color3.fromRGB(15, 15, 18),
+    Card = Color3.fromRGB(13, 13, 16),
+    CardHover = Color3.fromRGB(23, 23, 27),
     Row = Color3.fromRGB(27, 27, 31),
     Group = Color3.fromRGB(18, 18, 21),
-    Stroke = Color3.fromRGB(44, 44, 50),
+    Stroke = Color3.fromRGB(40, 40, 46),
     Text = Color3.fromRGB(244, 244, 248),
     Sub = Color3.fromRGB(150, 150, 163),
     Dim = Color3.fromRGB(98, 98, 110),
@@ -374,40 +383,52 @@ local Glyphs = {
 local IconAssets, IconWaiters = {}, {}
 
 local function ensureFolders()
-    if not makefolder then return end
+    if not (makefolder and isfolder) then return end
     pcall(function()
-        if isfolder and not isfolder(Library.Folder) then makefolder(Library.Folder) end
-        if isfolder and not isfolder(Library.Folder .. "/icons") then makefolder(Library.Folder .. "/icons") end
-        if isfolder and not isfolder(Library.Folder .. "/configs") then makefolder(Library.Folder .. "/configs") end
+        for _, sub in ipairs({ "", "/icons", "/configs", "/assets", "/fonts", "/sounds", "/sounds/module", "/sounds/notifications" }) do
+            local path = Library.Folder .. sub
+            if not isfolder(path) then makefolder(path) end
+        end
     end)
 end
 
-local function requestIcon(name, cb)
-    if IconAssets[name] then cb(IconAssets[name]) return end
+-- generic downloader: Library.AssetBase .. rel  ->  Celestial/<rel>  ->  getcustomasset
+local Assets, AssetWaiters = {}, {}
+local function requestAsset(rel, cb)
+    if Assets[rel] then cb(Assets[rel]) return end
     if not (writefile and isfile and getcustomasset) then return end
-    local w = IconWaiters[name]
+    local w = AssetWaiters[rel]
     if not w then
         w = { busy = false }
-        IconWaiters[name] = w
+        AssetWaiters[rel] = w
     end
     table.insert(w, cb)
     if w.busy then return end
     w.busy = true
     task.spawn(function()
-        local ok = pcall(function()
+        local ok, err = pcall(function()
             ensureFolders()
-            local path = Library.Folder .. "/icons/" .. name .. ".png"
+            local path = Library.Folder .. "/" .. rel
             if not isfile(path) then
-                local data = game:HttpGet(Library.IconBase .. name .. ".png")
-                if type(data) ~= "string" or data:sub(2, 4) ~= "PNG" then error("icon " .. name .. " not found") end
+                local data = game:HttpGet(Library.AssetBase .. rel)
+                if type(data) ~= "string" or #data < 16 then error(rel .. " not found") end
+                if rel:sub(-4) == ".png" and data:sub(2, 4) ~= "PNG" then error(rel .. " is not a png") end
                 writefile(path, data)
             end
-            IconAssets[name] = getcustomasset(path)
+            Assets[rel] = getcustomasset(path)
         end)
-        if ok and IconAssets[name] then
-            for _, f in ipairs(w) do pcall(f, IconAssets[name]) end
+        w.busy = false
+        if ok and Assets[rel] then
+            for _, f in ipairs(w) do pcall(f, Assets[rel]) end
+        elseif not ok then
+            warn("[Celestial] asset '" .. rel .. "': " .. tostring(err))
         end
+        for i = #w, 1, -1 do w[i] = nil end
     end)
+end
+
+local function requestIcon(name, cb)
+    requestAsset("icons/" .. name .. ".png", cb)
 end
 
 local function makeIcon(name, parent, size, color)
@@ -436,12 +457,94 @@ local function tintIcon(btn, color)
     if g then g.TextColor3 = color end
 end
 
+-- Glow: assets/glow.png (white) tinted black, sits BEHIND its target (must be a sibling of it)
+local function glowShow(img, on, t)
+    if not img or not img.Parent then return end
+    img:SetAttribute("On", on and true or false)
+    if img.Image == "" then return end
+    local target = on and (img:GetAttribute("Base") or 0.4) or 1
+    if (t or 0) <= 0 then img.ImageTransparency = target else tween(img, t, { ImageTransparency = target }) end
+end
+
+local function makeGlow(parent, o)
+    o = o or {}
+    local spread = o.Spread or 40
+    local img = create("ImageLabel", {
+        Name = "Glow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.new(1, spread * 2, 1, spread * 2), BackgroundTransparency = 1, BorderSizePixel = 0,
+        Image = "", ImageColor3 = o.Color or Library.GlowColor, ImageTransparency = 1,
+        ScaleType = Enum.ScaleType.Stretch, ZIndex = 0, Active = false, Parent = parent,
+    })
+    img:SetAttribute("Base", o.Transparency or 0.4)
+    img:SetAttribute("On", true)
+    requestAsset("assets/glow.png", function(asset)
+        if img.Parent == nil then return end
+        img.Image = asset
+        glowShow(img, img:GetAttribute("On") ~= false, 0.25)
+    end)
+    return img
+end
+
+-- AnimValue (port of core AnimValue): value that eases towards Target every frame
+Library._anims = setmetatable({}, { __mode = "k" })
+local Anim = {}
+Anim.__index = Anim
+function Library.NewAnim(value, speed, onUpdate)
+    local a = setmetatable({ Value = value or 0, Target = value or 0, Speed = speed or 10, OnUpdate = onUpdate }, Anim)
+    Library._anims[a] = true
+    return a
+end
+function Anim:Set(target, instant)
+    self.Target = target
+    if instant then self.Value = target if self.OnUpdate then self.OnUpdate(self.Value) end end
+end
+function Anim:Get() return self.Value end
+function Library:_stepAnims(dt)
+    for a in pairs(self._anims) do
+        if a.Value ~= a.Target then
+            local nv = a.Value + (a.Target - a.Value) * math.min(1, dt * a.Speed)
+            if math.abs(nv - a.Target) < 1e-3 then nv = a.Target end
+            a.Value = nv
+            if a.OnUpdate then a.OnUpdate(nv) end
+        end
+    end
+end
+
+function Library:PlaySound(name)
+    if not self.SoundsEnabled or self._loading then return end
+    local rel = self.Sounds[name]
+    if not rel then return end
+    requestAsset(rel, function(asset)
+        local snd = Instance.new("Sound")
+        snd.SoundId = asset
+        snd.Volume = self.SoundVolume
+        snd.Parent = svc("SoundService")
+        snd.Ended:Once(function() snd:Destroy() end)
+        snd:Play()
+        task.delay(6, function() if snd.Parent then snd:Destroy() end end)
+    end)
+end
+
+-- custom font from the repo (fonts/<file>.ttf) -> Font object via generated family json
+function Library:LoadFont(file, family, cb)
+    requestAsset("fonts/" .. file, function(ttf)
+        if not (writefile and getcustomasset) then return end
+        local ok, font = pcall(function()
+            local json = HttpService:JSONEncode({ name = family, faces = { { name = "Regular", weight = 400, style = "normal", assetId = ttf } } })
+            local path = Library.Folder .. "/fonts/" .. family .. ".json"
+            writefile(path, json)
+            return Font.new(getcustomasset(path), Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+        end)
+        if ok and cb then cb(font) end
+    end)
+end
+
 Library._P = P
 Library._util = {
     create = create, newText = newText, corner = corner, stroke = stroke, padding = padding,
     listLayout = listLayout, tween = tween, isPress = isPress, isMove = isMove, decimals = decimals,
     fmtNumber = fmtNumber, safeCall = safeCall, makeIcon = makeIcon, tintIcon = tintIcon,
-    svc = svc, guiParent = guiParent, ensureFolders = ensureFolders,
+    svc = svc, guiParent = guiParent, ensureFolders = ensureFolders, makeGlow = makeGlow, glowShow = glowShow, requestAsset = requestAsset,
 }
 
 
@@ -461,11 +564,28 @@ end
 function Setting:_fire()
     safeCall(self.Callback, self.Value)
     for _, fn in ipairs(self._listeners) do safeCall(fn, self.Value) end
+    if self._keyed then
+        for _, fn in pairs(self._keyed) do safeCall(fn, self.Value) end
+    end
 end
 
-function Setting:OnChanged(fn)
-    table.insert(self._listeners, fn)
+-- like Setting.id_class(String key, BiConsumer) in the Java core: a named listener is replaced, not duplicated
+function Setting:OnChanged(fn, key)
+    if key then
+        self._keyed = self._keyed or {}
+        self._keyed[key] = fn
+    else
+        table.insert(self._listeners, fn)
+    end
     return self
+end
+
+function Setting:RemoveListener(key)
+    if self._keyed then self._keyed[key] = nil end
+end
+
+function Setting:Reset(silent)
+    if self._default ~= nil and self.Type ~= "MultiSelect" then self:Set(self._default, silent) end
 end
 
 function Setting:SetVisible(v)
@@ -479,7 +599,7 @@ Container.__index = Container
 local function newSetting(self, kind, o)
     o = o or {}
     local s = setmetatable({
-        Type = kind, Name = o.Name or kind, Callback = o.Callback, VisibleFn = o.Visible,
+        Type = kind, Name = o.Name or kind, Callback = o.Callback, VisibleFn = o.Visible, _default = o.Default,
         Module = self._module, Parent = self, _listeners = {},
     }, Setting)
     self._order = (self._order or 0) + 1
@@ -1106,10 +1226,11 @@ function Module:SetEnabled(state, silent)
     if silent then return end
     safeCall(self.Callback, state)
     for _, fn in ipairs(self._toggleListeners) do safeCall(fn, state) end
+    if self.Category then Library:PlaySound(state and "Enable" or "Disable") end
     if Library.NotifyOnToggle and self.Category then
         Library:Notify({
             Title = self.Name, Content = state and L("Enabled") or L("Disabled"),
-            Type = state and "success" or "error", Duration = 2,
+            Type = state and "success" or "error", Duration = 2, Silent = true,
         })
     end
     Library:_refreshArrayList()
@@ -1169,7 +1290,7 @@ function Category:AddModule(o)
         Name = "Card_" .. m.Name, BackgroundColor3 = P.Card, BorderSizePixel = 0, Text = "", AutoButtonColor = false,
         LayoutOrder = moduleCounter, Parent = self.Page,
     })
-    corner(card, 11)
+    corner(card, 9)
     local cardStroke = stroke(card, P.Stroke, 1, 0.35)
     local cardGrad = create("UIGradient", { Rotation = 20, Enabled = false, Parent = card })
     m._card = card
@@ -1287,39 +1408,48 @@ function Library:CreateWindow(o)
     W.Gui = gui
     Library.Gui = gui
 
+    local root = create("Frame", {
+        Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(size.X, size.Y), BackgroundTransparency = 1, Visible = false, Parent = gui,
+    })
+    local glowImg = makeGlow(root, { Spread = 54, Transparency = 0.25 })
     local main = create("CanvasGroup", {
-        Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-        Size = UDim2.fromOffset(size.X, size.Y), BackgroundColor3 = P.Window, BackgroundTransparency = 0.03,
-        BorderSizePixel = 0, GroupTransparency = 1, Visible = false, Parent = gui,
+        Name = "Main", Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.Window, BackgroundTransparency = 0,
+        BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 1, Parent = root,
     })
     corner(main, 16)
-    local glow = stroke(main, P.White, 1.5, 0.15)
-    local glowGrad = create("UIGradient", { Rotation = 35, Parent = glow })
-    table.insert(W._persist, { glowGrad, 0.9 })
+    local glow = stroke(main, P.Stroke, 1, 0.35)
     W.Glow = glow
+    W.GlowImage = glowImg
     local baseScale = o.Scale or 1
     pcall(function()
         local vp = workspace.CurrentCamera.ViewportSize
         baseScale = math.min(baseScale, vp.X / (size.X + 40), vp.Y / (size.Y + 40))
     end)
-    local uiScale = create("UIScale", { Scale = baseScale, Parent = main })
+    local uiScale = create("UIScale", { Scale = baseScale, Parent = root })
     W.Main = main
+    W.Root = root
 
     local modal = create("TextButton", { Size = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Text = "", Modal = false, Parent = gui })
 
 
     local side = create("Frame", { Name = "Sidebar", Size = UDim2.new(0, 176, 1, 0), BackgroundTransparency = 1, Active = true, Parent = main })
-    Library:MakeDraggable(side, main)
-    local avatar = create("ImageLabel", {
-        Position = UDim2.fromOffset(14, 14), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = P.Panel,
+    Library:MakeDraggable(side, root)
+    create("Frame", {
+        Position = UDim2.new(1, -1, 0, 14), Size = UDim2.new(0, 1, 1, -28), BackgroundColor3 = P.Stroke,
+        BackgroundTransparency = 0.45, BorderSizePixel = 0, Parent = side,
+    })
+    local logo = create("Frame", {
+        Position = UDim2.fromOffset(14, 14), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = P.White,
         BorderSizePixel = 0, Parent = side,
     })
-    corner(avatar, 10)
-    if LocalPlayer then
-        pcall(function()
-            avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
-        end)
-    end
+    corner(logo, 10)
+    local logoGrad = create("UIGradient", { Rotation = 45, Parent = logo })
+    table.insert(W._persist, { logoGrad, 0.6 })
+    logoGrad.Color = Library:_sequence(0.6)
+    local atom = makeIcon("atom32", logo, 26, P.White)
+    atom.AnchorPoint = Vector2.new(0.5, 0.5)
+    atom.Position = UDim2.fromScale(0.5, 0.5)
     newText("TextLabel", {
         Position = UDim2.fromOffset(60, 14), Size = UDim2.new(1, -66, 0, 38), Text = W.Title, TextSize = 19, Parent = side,
     }, "Bold")
@@ -1361,6 +1491,7 @@ function Library:CreateWindow(o)
     local bar = create("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, Parent = content })
     local searchBg = create("Frame", { Size = UDim2.new(1, -84, 1, 0), BackgroundColor3 = P.Panel, BorderSizePixel = 0, Parent = bar })
     corner(searchBg, 11)
+    stroke(searchBg, P.Stroke, 1, 0.4)
     local sIcon = makeIcon("search", searchBg, 15, P.Sub)
     sIcon.Position = UDim2.new(0, 11, 0.5, -7)
     local searchBox = newText("TextBox", {
@@ -1369,21 +1500,21 @@ function Library:CreateWindow(o)
     }, "Medium")
     local folderBtn = create("TextButton", {
         AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -40, 0, 0), Size = UDim2.fromOffset(36, 36),
-        BackgroundColor3 = P.Panel, Text = "", AutoButtonColor = false, Parent = bar,
+        BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = bar,
     })
     corner(folderBtn, 11)
     local fIcon = makeIcon("folder", folderBtn, 17, P.Sub)
     fIcon.Position = UDim2.new(0.5, -8, 0.5, -8)
     local gearBtn = create("TextButton", {
         AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(36, 36),
-        BackgroundColor3 = P.Panel, Text = "", AutoButtonColor = false, Parent = bar,
+        BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = bar,
     })
     corner(gearBtn, 11)
     local gIcon = makeIcon("gear", gearBtn, 17, P.Sub)
     gIcon.Position = UDim2.new(0.5, -8, 0.5, -8)
-    for _, b in ipairs({ folderBtn, gearBtn }) do
-        b.MouseEnter:Connect(function() tween(b, 0.12, { BackgroundColor3 = P.CardHover }) end)
-        b.MouseLeave:Connect(function() tween(b, 0.12, { BackgroundColor3 = P.Panel }) end)
+    for _, pair in ipairs({ { folderBtn, fIcon }, { gearBtn, gIcon } }) do
+        pair[1].MouseEnter:Connect(function() tintIcon(pair[2], P.White) end)
+        pair[1].MouseLeave:Connect(function() tintIcon(pair[2], P.Sub) end)
     end
 
     local pages = create("Frame", {
@@ -1521,12 +1652,17 @@ function Library:CreateWindow(o)
         }, "SemiBold")
         cat.Button, cat._fill, cat._icon, cat._label = btn, fill, icon, lbl
         btn.MouseEnter:Connect(function()
-            if self.Current ~= cat then tween(fill, 0.12, { BackgroundTransparency = 0.9 }) end
+            if self.Current ~= cat and not cat.Locked then tween(fill, 0.12, { BackgroundTransparency = 0.9 }) end
         end)
         btn.MouseLeave:Connect(function()
             if self.Current ~= cat then tween(fill, 0.12, { BackgroundTransparency = 1 }) end
         end)
-        btn.MouseButton1Click:Connect(function() self:Select(cat) end)
+        cat.Locked = c.Locked == true
+        if cat.Locked then
+            tintIcon(icon, P.Dim)
+            lbl.TextColor3 = P.Dim
+        end
+        btn.MouseButton1Click:Connect(function() if not cat.Locked then self:Select(cat) end end)
 
         if c.Custom then
             cat.Page = create("Frame", { Name = "Page_" .. cat.Name, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, Parent = pages })
@@ -1613,7 +1749,7 @@ function Library:CreateWindow(o)
     end })
     gs:AddToggle({ Name = L("Glow"), Default = T.Glow, Callback = function(v)
         T.Glow = v
-        glow.Enabled = v
+        glowShow(glowImg, v and W.Open, 0.2)
     end })
     W.MenuKey = gs:AddKeybind({ Name = L("OpenMenu"), Default = o.Keybind or Enum.KeyCode.RightShift })
     gearBtn.MouseButton1Click:Connect(function() W:OpenSettings(gs) end)
@@ -1632,32 +1768,34 @@ function Library:CreateWindow(o)
         self.Open = state
         Library.Visible = state
         if state then
-            main.Visible = true
+            root.Visible = true
             for _, e in ipairs(self._persist) do Library:BindGradient(e[1], e[2]) end
             modal.Modal = true
             uiScale.Scale = baseScale * 0.94
             tween(main, 0.2, { GroupTransparency = 0 })
+            glowShow(glowImg, Library.Theme.Glow, 0.25)
             tween(uiScale, 0.2, { Scale = baseScale }, Enum.EasingStyle.Back)
         else
             self:CloseSettings(true)
             tween(main, 0.16, { GroupTransparency = 1 })
+            glowShow(glowImg, false, 0.16)
             tween(uiScale, 0.16, { Scale = baseScale * 0.96 })
             task.delay(0.18, function()
                 if not self.Open then
-                    main.Visible = false
+                    root.Visible = false
                     modal.Modal = false
                     for _, e in ipairs(self._persist) do Library:UnbindGradient(e[1]) end
                 end
             end)
         end
         Library:_blur(state)
+        Library:_hudPreview(state)
     end
 
     function W:Destroy()
         gui:Destroy()
     end
 
-    glow.Enabled = Library.Theme.Glow
     table.insert(Library.Windows, W)
     Library.Window = W
     Library:_start()
@@ -1816,6 +1954,7 @@ function Library:Notify(o)
     o = o or {}
     local kind = notifTypes[o.Type or "info"] or notifTypes.info
     local dur = o.Duration or 3
+    if not o.Silent then self:PlaySound("Notification") end
     local hud = self:_hudGui()
     local holder = self._notifHolder
     if not holder or not holder.Parent then
@@ -1834,9 +1973,13 @@ function Library:Notify(o)
     local wrap = create("Frame", {
         Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, LayoutOrder = self._notifCount, Parent = holder,
     })
+    local slide = create("Frame", {
+        Position = UDim2.new(1, 20, 0, 0), Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = wrap,
+    })
+    makeGlow(slide, { Spread = 22, Transparency = 0.4 })
     local card = create("Frame", {
-        Position = UDim2.new(1, 20, 0, 0), Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(15, 15, 18),
-        BackgroundTransparency = 0.04, BorderSizePixel = 0, Parent = wrap,
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(12, 12, 15),
+        BackgroundTransparency = 0.04, BorderSizePixel = 0, ZIndex = 1, Parent = slide,
     })
     corner(card, 11)
     stroke(card, P.Stroke, 1, 0.3)
@@ -1860,11 +2003,11 @@ function Library:Notify(o)
     local g = create("UIGradient", { Parent = bar })
     self:BindGradient(g, 0.8, true)
     tween(wrap, 0.18, { Size = UDim2.new(1, 0, 0, 54) })
-    tween(card, 0.22, { Position = UDim2.new(0, 0, 0, 0) }, Enum.EasingStyle.Back)
+    tween(slide, 0.22, { Position = UDim2.new(0, 0, 0, 0) }, Enum.EasingStyle.Back)
     tween(bar, dur, { Size = UDim2.new(0, 0, 0, 2) }, Enum.EasingStyle.Linear)
     task.delay(dur, function()
         if not card.Parent then return end
-        tween(card, 0.2, { Position = UDim2.new(1, 20, 0, 0) })
+        tween(slide, 0.2, { Position = UDim2.new(1, 20, 0, 0) })
         task.wait(0.2)
         if wrap.Parent then
             tween(wrap, 0.15, { Size = UDim2.new(1, 0, 0, 0) })
@@ -1979,44 +2122,183 @@ function Library:_updateWatermark()
     self._wmLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms", txt, playerName, self.FPS or 60, ping)
 end
 
+function Library:_registerWidget(name, root, handle)
+    self._widgets = self._widgets or {}
+    self._widgets[name] = root
+    root.Destroying:Connect(function()
+        if self._widgets and self._widgets[name] == root then self._widgets[name] = nil end
+    end)
+    self:MakeDraggable(handle or root, root, function() return Library.Visible end)
+end
+
+-- HudWidget (port of core HudWidget): draggable (while the menu is open) panel with title + rows
+function Library:CreateHudWidget(o)
+    o = o or {}
+    local name = o.Name or "Widget"
+    local hud = self:_hudGui()
+    local root = create("Frame", {
+        Name = name, Position = o.Position or UDim2.fromOffset(20, 220), Size = UDim2.fromOffset(o.Width or 170, 0),
+        AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = hud,
+    })
+    local glowImg = makeGlow(root, { Spread = 26, Transparency = 0.4 })
+    local card = create("CanvasGroup", {
+        Name = "Card", Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = Color3.fromRGB(11, 11, 14), BackgroundTransparency = 0.05, BorderSizePixel = 0,
+        ZIndex = 1, Parent = root,
+    })
+    corner(card, 10)
+    stroke(card, P.Stroke, 1, 0.45)
+    listLayout(card, 0)
+    local head = create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 0, Parent = card })
+    newText("TextLabel", {
+        Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), Text = o.Title or name, TextSize = 12,
+        Parent = head,
+    }, "Bold")
+    local line = create("Frame", {
+        AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, 0), Size = UDim2.new(1, -16, 0, 2),
+        BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = head,
+    })
+    corner(line, 1)
+    local lg = create("UIGradient", { Parent = line })
+    self:BindGradient(lg, 0.8, true)
+    local body = create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 1, Parent = card,
+    })
+    listLayout(body, 2)
+    padding(body, 10, 6, 10, 8)
+
+    local w = { Frame = root, Card = card, Body = body, Name = name, Shown = true }
+    function w:SetEntries(list)
+        for _, c in ipairs(body:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+        if #list == 0 and o.EmptyText then list = { { Text = o.EmptyText, Color = P.Dim } } end
+        for i, e in ipairs(list) do
+            local row = create("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, LayoutOrder = i, Parent = body })
+            newText("TextLabel", {
+                Size = UDim2.new(1, e.Right and -50 or 0, 1, 0), Text = tostring(e.Text), TextSize = 12,
+                TextColor3 = e.Color or P.Text, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
+            }, "Medium")
+            if e.Right then
+                newText("TextLabel", {
+                    AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 48, 1, 0),
+                    Text = tostring(e.Right), TextSize = 11, TextColor3 = e.RightColor or P.Sub,
+                    TextXAlignment = Enum.TextXAlignment.Right, Parent = row,
+                }, "SemiBold")
+            end
+        end
+    end
+    function w:SetTitle(t) head:FindFirstChildOfClass("TextLabel").Text = t end
+    function w:SetShown(state)
+        self.Shown = state and true or false
+        tween(card, 0.18, { GroupTransparency = state and 0 or 1 })
+        glowShow(glowImg, state, 0.18)
+        if state then root.Visible = true else task.delay(0.2, function() if not self.Shown then root.Visible = false end end) end
+    end
+    function w:Destroy() self:SetShown(false) root:Destroy() end
+    self:_registerWidget(name, root, card)
+    return w
+end
+
+local function lerpColor(a, b, t) return a:Lerp(b, t) end
+
 function Library:GetTargetHud()
     if self._target and self._target.Frame.Parent then return self._target end
     local hud = self:_hudGui()
-    local f = create("Frame", {
-        Name = "TargetHud", Position = UDim2.new(0.5, 40, 0.5, 40), Size = UDim2.fromOffset(220, 58),
-        BackgroundColor3 = Color3.fromRGB(13, 13, 15), BackgroundTransparency = 0.08, BorderSizePixel = 0, Visible = false,
-        Parent = hud,
+    local root = create("Frame", {
+        Name = "TargetHud", Position = UDim2.new(0.5, 40, 0.5, 40), Size = UDim2.fromOffset(236, 66),
+        BackgroundTransparency = 1, Visible = false, Parent = hud,
     })
-    corner(f, 12)
-    stroke(f, P.Stroke, 1, 0.2)
+    local scale = create("UIScale", { Scale = 0.92, Parent = root })
+    local glowImg = makeGlow(root, { Spread = 28, Transparency = 0.35 })
+    local card = create("CanvasGroup", {
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(11, 11, 14), BackgroundTransparency = 0.04,
+        BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 1, Parent = root,
+    })
+    corner(card, 12)
+    stroke(card, P.Stroke, 1, 0.4)
     local face = create("ImageLabel", {
-        Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = P.Panel, BorderSizePixel = 0, Parent = f,
+        Position = UDim2.fromOffset(10, 11), Size = UDim2.fromOffset(44, 44), BackgroundColor3 = P.Panel,
+        BorderSizePixel = 0, Parent = card,
     })
-    corner(face, 9)
-    local nameL = newText("TextLabel", { Position = UDim2.fromOffset(58, 8), Size = UDim2.new(1, -68, 0, 18), TextSize = 13, TextTruncate = Enum.TextTruncate.AtEnd, Parent = f }, "Bold")
-    local track = create("Frame", { Position = UDim2.fromOffset(58, 32), Size = UDim2.new(1, -68, 0, 8), BackgroundColor3 = P.Off, BorderSizePixel = 0, Parent = f })
+    corner(face, 10)
+    local nameL = newText("TextLabel", {
+        Position = UDim2.fromOffset(64, 8), Size = UDim2.new(1, -118, 0, 18), TextSize = 13,
+        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+    }, "Bold")
+    local hpR = newText("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 8), Size = UDim2.fromOffset(46, 18),
+        TextSize = 12, TextColor3 = P.Sub, TextXAlignment = Enum.TextXAlignment.Right, Parent = card,
+    }, "SemiBold")
+    local track = create("Frame", {
+        Position = UDim2.fromOffset(64, 33), Size = UDim2.new(1, -74, 0, 8), BackgroundColor3 = P.Off,
+        BorderSizePixel = 0, Parent = card,
+    })
     corner(track, 4)
-    local fill = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = track })
+    local trail = create("Frame", {
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BackgroundTransparency = 0.55, BorderSizePixel = 0, Parent = track,
+    })
+    corner(trail, 4)
+    local fill = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BorderSizePixel = 0, ZIndex = 2, Parent = track })
     corner(fill, 4)
     local g = create("UIGradient", { Parent = fill })
     self:BindGradient(g, 0.6, true)
-    local hp = newText("TextLabel", { Position = UDim2.fromOffset(58, 42), Size = UDim2.new(1, -68, 0, 12), TextSize = 10, TextColor3 = P.Sub, Parent = f }, "Medium")
-    local obj = { Frame = f }
-    function obj:Update(name, health, maxHealth, userId)
-        maxHealth = maxHealth or 100
+    local sub = newText("TextLabel", {
+        Position = UDim2.fromOffset(64, 44), Size = UDim2.new(1, -74, 0, 14), TextSize = 10, TextColor3 = P.Dim, Parent = card,
+    }, "Medium")
+
+    local obj = { Frame = root, HideAfter = 3, _last = 0, _shown = false, _uid = nil }
+    local hpAnim = Library.NewAnim(1, 14, function(v) fill.Size = UDim2.fromScale(v, 1) end)
+    local trailAnim = Library.NewAnim(1, 3.2, function(v) trail.Size = UDim2.fromScale(v, 1) end)
+    obj._anims = { hpAnim, trailAnim }
+
+    function obj:Update(name, health, maxHealth, userId, preview)
+        maxHealth = maxHealth or 20
         health = math.clamp(health or 0, 0, maxHealth)
+        local frac = maxHealth > 0 and health / maxHealth or 0
         nameL.Text = tostring(name or "Target")
-        hp.Text = string.format("%d / %d", math.floor(health + 0.5), math.floor(maxHealth + 0.5))
-        tween(fill, 0.15, { Size = UDim2.fromScale(maxHealth > 0 and health / maxHealth or 0, 1) })
-        if userId then
+        hpR.Text = string.format("%.1f", health)
+        sub.Text = string.format("HP %d / %d", math.floor(health + 0.5), math.floor(maxHealth + 0.5))
+        hpAnim:Set(frac)
+        if frac > trailAnim.Value then trailAnim:Set(frac, true) else trailAnim:Set(frac) end
+        if userId and userId ~= self._uid then
+            self._uid = userId
             pcall(function() face.Image = "rbxthumb://type=AvatarHeadShot&id=" .. userId .. "&w=150&h=150" end)
         end
-        f.Visible = true
+        self._last = os.clock()
+        self._preview = preview == true
+        if not self._shown then
+            self._shown = true
+            root.Visible = true
+            tween(card, 0.18, { GroupTransparency = 0 })
+            tween(scale, 0.22, { Scale = 1 }, Enum.EasingStyle.Back)
+            glowShow(glowImg, true, 0.2)
+        end
     end
-    function obj:Hide() f.Visible = false end
+    function obj:Hide()
+        if not self._shown then return end
+        self._shown = false
+        self._preview = false
+        tween(card, 0.16, { GroupTransparency = 1 })
+        tween(scale, 0.16, { Scale = 0.92 })
+        glowShow(glowImg, false, 0.16)
+        task.delay(0.18, function() if not self._shown then root.Visible = false end end)
+    end
+    obj._tick = function()
+        if obj._shown and not Library.Visible and os.clock() - obj._last > obj.HideAfter then obj:Hide() end
+    end
     self._target = obj
-    self:MakeDraggable(f, f, function() return Library.Visible end)
+    self:_registerWidget("TargetHud", root, card)
     return obj
+end
+
+-- shows a preview of the target hud while the menu is open so it can be dragged
+function Library:_hudPreview(state)
+    local t = self._target
+    if not (t and t.Frame.Parent) then return end
+    if state then
+        if not t._shown then t:Update(LocalPlayer.Name, 20, 20, LocalPlayer.UserId, true) end
+    elseif t._preview then
+        t:Hide()
+    end
 end
 
 
@@ -2062,6 +2344,11 @@ function Library:GetConfigData()
     local data = { Version = 1, Modules = {}, Gui = {}, Theme = {
         Mode = self.Theme.Mode, Name = (self.Themes[self.Theme.Index] or {}).Name,
     } }
+    data.Hud = {}
+    for name, root in pairs(self._widgets or {}) do
+        local p = root.Position
+        data.Hud[name] = { p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset }
+    end
     for _, m in ipairs(self.Modules) do
         local e = { Enabled = m.Enabled, Bind = m.Bind and tostring(m.Bind) or "", Settings = {} }
         for _, s in ipairs(m.Settings) do
@@ -2087,6 +2374,10 @@ function Library:ApplyConfigData(data)
             for _, s in ipairs(self.Window.GuiSettings.Settings) do applySetting(s, data.Gui[s._key]) end
         end
         if data.Theme and data.Theme.Name and data.Theme.Mode == "client" then self:SetTheme(data.Theme.Name) end
+        for name, p in pairs(data.Hud or {}) do
+            local root = self._widgets and self._widgets[name]
+            if root and type(p) == "table" then root.Position = UDim2.new(p[1] or 0, p[2] or 0, p[3] or 0, p[4] or 0) end
+        end
         for _, m in ipairs(self.Modules) do
             local e = data.Modules and data.Modules[m._key]
             if e then
@@ -2179,6 +2470,8 @@ function Library:_start()
     local acc, fpsAcc, frames = 0, 0, 0
     self:Connect(RunService.Heartbeat, function(dt)
         self._time = self._time + dt
+        self:_stepAnims(dt)
+        if self._target and self._target._tick then self._target._tick() end
         acc = acc + dt
         if acc >= 1 / 40 then
             acc = 0
@@ -2255,6 +2548,7 @@ function Library:Unload()
     if fx then fx:Destroy() end
     self.Windows, self.Modules, self.Categories = {}, {}, {}
     self._grads, self._hudGrads = {}, {}
+    self._widgets, self._target = {}, nil
     self._started, self._listening = false, nil
     if genv.CelestialLibrary == self then genv.CelestialLibrary = nil end
 end
