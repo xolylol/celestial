@@ -1,5 +1,3 @@
-
-
 local Library = {}
 Library.__index = Library
 Library.Version = "1.0.0"
@@ -8,6 +6,12 @@ Library.AssetBase = "https://raw.githubusercontent.com/xolylol/celestial/main/"
 Library.IconBase = Library.AssetBase .. "icons/"
 Library.GlowColor = Color3.new(0, 0, 0)            -- assets/glow.png is white, it gets tinted with ImageColor3
 Library.SoundsEnabled = true
+Library.SoundPitch = 1
+Library.NotifySound = true
+Library.ArrayListGlow = true
+Library.ArrayListOffset = 2
+Library.StudsPerBlock = 3.571
+Library.HudState = { Enabled = false, Watermark = true, ModuleBinds = true, Fps = true, Bps = true, Tps = true, Coords = true }
 Library.SoundVolume = 0.6
 Library.Sounds = {
     Enable = "sounds/module/module_enable.ogg",
@@ -81,7 +85,7 @@ end
 
 Library.Languages = {
     ru = {
-        Search = "Поиск", Logout = "Выйти", Settings = "Настройка",
+        Search = "Поиск", Logout = "Выйти", Settings = "Настройка", Modules = "Modules",
         OpenMenu = "Открыть меню", Color = "Цвет", ModeClient = "Клиентский", ModeCustom = "Кастомный",
         FirstColor = "Первый цвет", SecondColor = "Второй цвет", ColorSpeed = "Скорость цвета",
         ColorBlend = "Смешивание цветов", Blur = "Размытие", Glow = "Свечение",
@@ -91,7 +95,7 @@ Library.Languages = {
         NoConfigs = "Конфигов пока нет", Themes = "Темы", Configs = "Конфиги", Press = "Нажмите клавишу...",
     },
     en = {
-        Search = "Search", Logout = "Logout", Settings = "Settings",
+        Search = "Search", Logout = "Logout", Settings = "Settings", Modules = "Modules",
         OpenMenu = "Open menu", Color = "Color", ModeClient = "Client", ModeCustom = "Custom",
         FirstColor = "First color", SecondColor = "Second color", ColorSpeed = "Color speed",
         ColorBlend = "Color blending", Blur = "Blur", Glow = "Glow",
@@ -394,15 +398,22 @@ end
 
 -- generic downloader: Library.AssetBase .. rel  ->  Celestial/<rel>  ->  getcustomasset
 local Assets, AssetWaiters = {}, {}
-local function requestAsset(rel, cb)
+local function requestAsset(rel, cb, onFail)
     if Assets[rel] then cb(Assets[rel]) return end
-    if not (writefile and isfile and getcustomasset) then return end
+    if not (writefile and isfile and getcustomasset) then
+        if onFail then onFail() end
+        return
+    end
     local w = AssetWaiters[rel]
     if not w then
         w = { busy = false }
         AssetWaiters[rel] = w
     end
     table.insert(w, cb)
+    if onFail then
+        w.fails = w.fails or {}
+        table.insert(w.fails, onFail)
+    end
     if w.busy then return end
     w.busy = true
     task.spawn(function()
@@ -422,7 +433,9 @@ local function requestAsset(rel, cb)
             for _, f in ipairs(w) do pcall(f, Assets[rel]) end
         elseif not ok then
             warn("[Celestial] asset '" .. rel .. "': " .. tostring(err))
+            for _, f in ipairs(w.fails or {}) do pcall(f) end
         end
+        w.fails = nil
         for i = #w, 1, -1 do w[i] = nil end
     end)
 end
@@ -461,27 +474,56 @@ end
 local function glowShow(img, on, t)
     if not img or not img.Parent then return end
     img:SetAttribute("On", on and true or false)
-    if img.Image == "" then return end
-    local target = on and (img:GetAttribute("Base") or 0.4) or 1
-    if (t or 0) <= 0 then img.ImageTransparency = target else tween(img, t, { ImageTransparency = target }) end
+    local base = img:GetAttribute("Base") or 0.4
+    local target = on and base or 1
+    local fake = img:FindFirstChild("Fake")
+    if fake then
+        if (t or 0) <= 0 then fake.GroupTransparency = target else tween(fake, t, { GroupTransparency = target }) end
+    elseif img.Image ~= "" then
+        if (t or 0) <= 0 then img.ImageTransparency = target else tween(img, t, { ImageTransparency = target }) end
+    end
+end
+
+-- used when glow.png can't be downloaded (or the executor has no file api): stacked soft rounded layers
+local function buildFakeGlow(img, spread, color)
+    if img:FindFirstChild("Fake") then return end
+    local fake = create("CanvasGroup", {
+        Name = "Fake", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, GroupTransparency = 1, Parent = img,
+    })
+    local N = 8
+    for i = 1, N do
+        local inset = spread * 2 * (i - 1) / N
+        local f = create("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.new(1, -inset, 1, -inset), BackgroundColor3 = color, BackgroundTransparency = 0.9,
+            BorderSizePixel = 0, Parent = fake,
+        })
+        corner(f, 14 + spread * (N - i + 1) / N)
+    end
 end
 
 local function makeGlow(parent, o)
     o = o or {}
     local spread = o.Spread or 40
+    local color = o.Color or Library.GlowColor
     local img = create("ImageLabel", {
         Name = "Glow", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
         Size = UDim2.new(1, spread * 2, 1, spread * 2), BackgroundTransparency = 1, BorderSizePixel = 0,
-        Image = "", ImageColor3 = o.Color or Library.GlowColor, ImageTransparency = 1,
+        Image = "", ImageColor3 = color, ImageTransparency = 1,
         ScaleType = Enum.ScaleType.Stretch, ZIndex = 0, Active = false, Parent = parent,
     })
     img:SetAttribute("Base", o.Transparency or 0.4)
     img:SetAttribute("On", true)
+    local function fallback()
+        if img.Parent == nil then return end
+        buildFakeGlow(img, spread, color)
+        glowShow(img, img:GetAttribute("On") ~= false, 0.25)
+    end
     requestAsset("assets/glow.png", function(asset)
         if img.Parent == nil then return end
         img.Image = asset
         glowShow(img, img:GetAttribute("On") ~= false, 0.25)
-    end)
+    end, fallback)
     return img
 end
 
@@ -514,10 +556,12 @@ function Library:PlaySound(name)
     if not self.SoundsEnabled or self._loading then return end
     local rel = self.Sounds[name]
     if not rel then return end
+    if name == "Notification" and self.NotifySound == false then return end
     requestAsset(rel, function(asset)
         local snd = Instance.new("Sound")
         snd.SoundId = asset
         snd.Volume = self.SoundVolume
+        snd.PlaybackSpeed = (name == "Notification") and self.SoundPitch or 1
         snd.Parent = svc("SoundService")
         snd.Ended:Once(function() snd:Destroy() end)
         snd:Play()
@@ -1229,8 +1273,8 @@ function Module:SetEnabled(state, silent)
     if self.Category then Library:PlaySound(state and "Enable" or "Disable") end
     if Library.NotifyOnToggle and self.Category then
         Library:Notify({
-            Title = self.Name, Content = state and L("Enabled") or L("Disabled"),
-            Type = state and "success" or "error", Duration = 2, Silent = true,
+            Title = L("Modules"), Content = self.Name .. " " .. (state and L("Enabled") or L("Disabled")),
+            Type = "info", Duration = 2, Silent = true,
         })
     end
     Library:_refreshArrayList()
@@ -1239,6 +1283,7 @@ end
 function Module:SetKeybind(key)
     self.Bind = key
     if self._renderBind then self._renderBind() end
+    Library:_refreshKeybinds()
 end
 
 function Module:SetDescription(text)
@@ -1462,6 +1507,13 @@ function Library:CreateWindow(o)
     padding(nav, 12, 0, 12, 4)
     W.Nav = nav
 
+    local logoutGlow = makeGlow(side, { Spread = 30, Transparency = 0.1 })
+    logoutGlow.AnchorPoint = Vector2.new(0.5, 1)
+    logoutGlow.Position = UDim2.new(0.5, 0, 1, 34)
+    logoutGlow.Size = UDim2.new(1, 60, 0, 140)
+    logoutGlow.ZIndex = 1
+    W.LogoutGlow = logoutGlow
+
     local logout = create("TextButton", {
         Position = UDim2.new(0, 12, 1, -48), Size = UDim2.new(1, -24, 0, 34), BackgroundColor3 = P.White,
         BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Parent = side,
@@ -1562,26 +1614,28 @@ function Library:CreateWindow(o)
     W.SearchBox = searchBox
 
 
-    local popup = create("Frame", { Name = "Popup", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false, ZIndex = 50, Parent = main })
-    local dim = create("TextButton", {
-        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, Text = "",
-        AutoButtonColor = false, Parent = popup,
+    local PW, PH = 340, math.floor(size.Y * 0.84)
+    local pwin = create("Frame", {
+        Name = "SettingsWindow", Size = UDim2.fromOffset(PW, PH), BackgroundTransparency = 1, Visible = false, Parent = gui,
     })
+    local pScale = create("UIScale", { Scale = baseScale, Parent = pwin })
+    local pGlow = makeGlow(pwin, { Spread = 44, Transparency = 0.25 })
     local box = create("CanvasGroup", {
-        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 340, 0.84, 0),
-        BackgroundColor3 = P.Window, BorderSizePixel = 0, GroupTransparency = 1, Parent = popup,
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.Window, BorderSizePixel = 0, GroupTransparency = 1,
+        ZIndex = 1, Parent = pwin,
     })
     corner(box, 14)
-    local boxStroke = stroke(box, P.Stroke, 1)
-    local boxScale = create("UIScale", { Scale = 0.94, Parent = box })
+    stroke(box, P.Stroke, 1, 0.35)
+    local pHead = create("Frame", { Size = UDim2.new(1, 0, 0, 42), BackgroundTransparency = 1, Active = true, Parent = box })
     local pTitle = newText("TextLabel", {
-        Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -60, 0, 42), TextSize = 15, Parent = box,
+        Position = UDim2.fromOffset(16, 0), Size = UDim2.new(1, -60, 1, 0), TextSize = 15, Parent = pHead,
     }, "Bold")
-    local pClose = makeIcon("close", box, 13, P.Sub)
+    local pClose = makeIcon("close", pHead, 13, P.Sub)
     pClose.AnchorPoint = Vector2.new(1, 0.5)
-    pClose.Position = UDim2.new(1, -16, 0, 21)
+    pClose.Position = UDim2.new(1, -16, 0.5, 0)
     local pBody = create("Frame", { Position = UDim2.fromOffset(0, 42), Size = UDim2.new(1, 0, 1, -42), BackgroundTransparency = 1, ClipsDescendants = true, Parent = box })
-    W._popup = { frame = popup, dim = dim, box = box, scale = boxScale, title = pTitle, body = pBody }
+    Library:MakeDraggable(pHead, pwin)
+    W._popup = { frame = pwin, box = box, scale = pScale, title = pTitle, body = pBody }
 
     function W:OpenSettings(m)
         if self._popupModule then self:CloseSettings(true) end
@@ -1589,10 +1643,20 @@ function Library:CreateWindow(o)
         pTitle.Text = m.Name
         m._panel.Parent = pBody
         m:_activate(true)
-        popup.Visible = true
-        tween(dim, 0.18, { BackgroundTransparency = 0.5 })
+        -- place it next to the menu (right side, or left if there is no room)
+        local vp = gui.AbsoluteSize
+        local ap, asz = root.AbsolutePosition, root.AbsoluteSize
+        local pw, ph = PW * baseScale, PH * baseScale
+        local x = ap.X + asz.X + 12
+        if x + pw > vp.X - 8 then x = ap.X - pw - 12 end
+        x = math.clamp(x, 8, math.max(8, vp.X - pw - 8))
+        local y = math.clamp(ap.Y + (asz.Y - ph) / 2, 8, math.max(8, vp.Y - ph - 8))
+        pwin.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+        pwin.Visible = true
+        pScale.Scale = baseScale * 0.94
         tween(box, 0.18, { GroupTransparency = 0 })
-        tween(boxScale, 0.18, { Scale = 1 })
+        tween(pScale, 0.2, { Scale = baseScale }, Enum.EasingStyle.Back)
+        glowShow(pGlow, Library.Theme.Glow, 0.2)
     end
     function W:CloseSettings(instant)
         local m = self._popupModule
@@ -1601,22 +1665,20 @@ function Library:CreateWindow(o)
         m._panel.Parent = nil
         m:_activate(false)
         if instant then
-            popup.Visible = false
-            dim.BackgroundTransparency = 1
+            pwin.Visible = false
             box.GroupTransparency = 1
-            boxScale.Scale = 0.94
+            pScale.Scale = baseScale * 0.94
+            glowShow(pGlow, false, 0)
             return
         end
-        tween(dim, 0.15, { BackgroundTransparency = 1 })
         tween(box, 0.15, { GroupTransparency = 1 })
-        tween(boxScale, 0.15, { Scale = 0.94 })
+        tween(pScale, 0.15, { Scale = baseScale * 0.94 })
+        glowShow(pGlow, false, 0.15)
         task.delay(0.17, function()
-            if not self._popupModule then popup.Visible = false end
+            if not self._popupModule then pwin.Visible = false end
         end)
     end
-    dim.MouseButton1Click:Connect(function() W:CloseSettings() end)
     pClose.MouseButton1Click:Connect(function() W:CloseSettings() end)
-
 
     function W:AddCategory(c)
         c = c or {}
@@ -1943,10 +2005,10 @@ function Library:_hudGui()
 end
 
 local notifTypes = {
-    info = { color = P.White, icon = "info" },
-    success = { color = P.Success, icon = "success" },
-    error = { color = P.Danger, icon = "error" },
-    danger = { color = P.Warn, icon = "danger" },
+    info = { icon = "info", color = P.White },
+    success = { icon = "success", color = P.Success },
+    error = { icon = "error", color = P.Danger },
+    danger = { icon = "danger", color = P.Warn },
 }
 
 function Library:Notify(o)
@@ -1960,7 +2022,7 @@ function Library:Notify(o)
     if not holder or not holder.Parent then
         holder = create("Frame", {
             Name = "Notifications", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -14, 1, -14),
-            Size = UDim2.fromOffset(280, 400), BackgroundTransparency = 1, Parent = hud,
+            Size = UDim2.fromOffset(340, 400), BackgroundTransparency = 1, Parent = hud,
         })
         create("UIListLayout", {
             SortOrder = Enum.SortOrder.LayoutOrder, VerticalAlignment = Enum.VerticalAlignment.Bottom,
@@ -1970,142 +2032,194 @@ function Library:Notify(o)
         self._notifCount = 0
     end
     self._notifCount = self._notifCount + 1
-    local wrap = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, LayoutOrder = self._notifCount, Parent = holder,
-    })
+    local wrap = create("Frame", { Size = UDim2.fromOffset(340, 0), BackgroundTransparency = 1, LayoutOrder = self._notifCount, Parent = holder })
     local slide = create("Frame", {
-        Position = UDim2.new(1, 20, 0, 0), Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = wrap,
+        AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.fromScale(1, 0.5), Size = UDim2.fromOffset(0, 46),
+        AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Parent = wrap,
     })
-    makeGlow(slide, { Spread = 22, Transparency = 0.4 })
-    local card = create("Frame", {
-        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(12, 12, 15),
-        BackgroundTransparency = 0.04, BorderSizePixel = 0, ZIndex = 1, Parent = slide,
+    local sScale = create("UIScale", { Scale = 0.85, Parent = slide })
+    local glowImg = makeGlow(slide, { Spread = 22, Transparency = 0.3 })
+    local card = create("CanvasGroup", {
+        Size = UDim2.fromOffset(0, 46), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = Color3.fromRGB(14, 13, 22),
+        BackgroundTransparency = 0.05, BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 1, Parent = slide,
     })
-    corner(card, 11)
-    stroke(card, P.Stroke, 1, 0.3)
-    local icon = makeIcon(kind.icon, card, 22, P.White)
-    icon.Position = UDim2.fromOffset(12, 15)
-    local glyph = icon:FindFirstChild("Glyph")
-    if glyph then glyph.TextColor3 = kind.color end
+    corner(card, 12)
+    local cs = stroke(card, P.White, 1.5, 0.25)
+    local sg = create("UIGradient", { Rotation = 20, Parent = cs })
+    self:BindGradient(sg, 0.8, true)
+    local tint = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BackgroundTransparency = 0.78, BorderSizePixel = 0, ZIndex = 1, Parent = card })
+    local tg = create("UIGradient", { Rotation = 20, Parent = tint })
+    self:BindGradient(tg, 0.8, true)
+    local row = create("Frame", { Size = UDim2.fromOffset(0, 46), AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, ZIndex = 2, Parent = card })
+    padding(row, 14, 0, 18, 0)
+    create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 10), Parent = row,
+    })
+    local icon = makeIcon(kind.icon, row, 22, kind.color)
+    icon.LayoutOrder = 1
+    icon.ZIndex = 2
+    local texts = create("Frame", { Size = UDim2.fromOffset(0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, LayoutOrder = 2, ZIndex = 2, Parent = row })
+    listLayout(texts, 0)
     newText("TextLabel", {
-        Position = UDim2.fromOffset(44, 8), Size = UDim2.new(1, -54, 0, 18), Text = o.Title or "Celestial", TextSize = 13,
-        TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
+        Size = UDim2.fromOffset(0, 19), AutomaticSize = Enum.AutomaticSize.X, Text = o.Title or "Celestial", TextSize = 15,
+        ZIndex = 2, LayoutOrder = 1, Parent = texts,
     }, "Bold")
     newText("TextLabel", {
-        Position = UDim2.fromOffset(44, 26), Size = UDim2.new(1, -54, 0, 16), Text = o.Content or "", TextSize = 11,
-        TextColor3 = P.Sub, TextTruncate = Enum.TextTruncate.AtEnd, Parent = card,
-    }, "Medium")
-    local bar = create("Frame", {
-        AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 12, 1, -5), Size = UDim2.new(1, -24, 0, 2),
-        BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = card,
-    })
-    corner(bar, 1)
-    local g = create("UIGradient", { Parent = bar })
-    self:BindGradient(g, 0.8, true)
-    tween(wrap, 0.18, { Size = UDim2.new(1, 0, 0, 54) })
-    tween(slide, 0.22, { Position = UDim2.new(0, 0, 0, 0) }, Enum.EasingStyle.Back)
-    tween(bar, dur, { Size = UDim2.new(0, 0, 0, 2) }, Enum.EasingStyle.Linear)
+        Size = UDim2.fromOffset(0, 16), AutomaticSize = Enum.AutomaticSize.X, Text = o.Content or "", TextSize = 13,
+        TextColor3 = Color3.fromRGB(230, 230, 238), ZIndex = 2, LayoutOrder = 2, Parent = texts,
+    }, "SemiBold")
+    tween(wrap, 0.18, { Size = UDim2.fromOffset(340, 46) })
+    tween(card, 0.2, { GroupTransparency = 0 })
+    tween(sScale, 0.26, { Scale = 1 }, Enum.EasingStyle.Back)
     task.delay(dur, function()
         if not card.Parent then return end
-        tween(slide, 0.2, { Position = UDim2.new(1, 20, 0, 0) })
+        tween(card, 0.2, { GroupTransparency = 1 })
+        tween(sScale, 0.2, { Scale = 0.85 })
+        glowShow(glowImg, false, 0.2)
         task.wait(0.2)
         if wrap.Parent then
-            tween(wrap, 0.15, { Size = UDim2.new(1, 0, 0, 0) })
+            tween(wrap, 0.15, { Size = UDim2.fromOffset(340, 0) })
             task.wait(0.16)
-            self:UnbindGradient(g)
+            self:UnbindGradient(sg)
+            self:UnbindGradient(tg)
             wrap:Destroy()
         end
     end)
 end
+
+-- ───────────────────────────── ArrayList (port of ArrayListHud) ─────────────────────────────
+local ROWH = 17
 
 function Library:SetArrayList(state)
     self._arrayOn = state and true or false
     self:_refreshArrayList()
 end
 
-function Library:_refreshArrayList()
-    if not self._arrayOn then
-        if self._arrayFrame then
-            for _, c in ipairs(self._arrayFrame:GetChildren()) do
-                if c:IsA("Frame") then
-                    for _, d in ipairs(c:GetDescendants()) do if d:IsA("UIGradient") then self:UnbindGradient(d) end end
-                    c:Destroy()
-                end
-            end
-            self._arrayFrame.Visible = false
-        end
-        return
-    end
-    local hud = self:_hudGui()
+function Library:_arrayContainer()
     local frame = self._arrayFrame
-    if not frame or not frame.Parent then
-        frame = create("Frame", {
-            Name = "ArrayList", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(0, 0),
-            AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, Parent = hud,
-        })
-        create("UIListLayout", {
-            SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Right,
-            Padding = UDim.new(0, 2), Parent = frame,
-        })
-        self._arrayFrame = frame
-    end
-    frame.Visible = true
-    for _, c in ipairs(frame:GetChildren()) do
-        if c:IsA("Frame") then
-            for _, d in ipairs(c:GetDescendants()) do if d:IsA("UIGradient") then self:UnbindGradient(d) end end
-            c:Destroy()
+    if frame and frame.Parent then return frame end
+    frame = create("Frame", {
+        Name = "ArrayList", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -4, 0, 4),
+        Size = UDim2.new(0, 280, 1, -8), BackgroundTransparency = 1, Parent = self:_hudGui(),
+    })
+    self._arrayFrame = frame
+    self._arrayRows = {}
+    return frame
+end
+
+function Library:_newArrayRow(frame, m, text)
+    local row = create("Frame", {
+        Name = m.Name, AnchorPoint = Vector2.new(1, 0), Size = UDim2.fromOffset(0, ROWH),
+        AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Parent = frame,
+    })
+    local glowImg = makeGlow(row, { Spread = 9, Transparency = 0.3 })
+    create("Frame", {
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(8, 8, 10), BackgroundTransparency = 0.22,
+        BorderSizePixel = 0, ZIndex = 1, Parent = row,
+    })
+    local label = newText("TextLabel", {
+        Size = UDim2.fromOffset(0, ROWH), AutomaticSize = Enum.AutomaticSize.X, Text = text, TextSize = 14,
+        ZIndex = 2, Parent = row,
+    }, "SemiBold")
+    padding(label, 5, 0, 8, 0)
+    local bar = create("Frame", {
+        AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 2, 1, 0),
+        BackgroundColor3 = P.White, BorderSizePixel = 0, ZIndex = 3, Parent = row,
+    })
+    return { frame = row, label = label, bar = bar, glow = glowImg, index = 0 }
+end
+
+function Library:_refreshArrayList()
+    local frame = self:_arrayContainer()
+    local rows = self._arrayRows
+    frame.Visible = self._arrayOn == true
+    local want, order = {}, {}
+    if self._arrayOn then
+        for _, m in ipairs(self.Modules) do
+            if m.Enabled and m.Category
+                and (not self.ArrayListHide[m.Category.Name] or m.Name == "HUD" or m.Name == "2D ESP") then
+                local text = self.ArrayListLowercase and m.Name:lower() or m.Name
+                local w = #text * 7
+                pcall(function() w = TextService:GetTextSize(text, 14, Enum.Font.Montserrat, Vector2.new(1000, 100)).X end)
+                want[m] = true
+                order[#order + 1] = { m = m, text = text, w = w }
+            end
         end
     end
-    local list = {}
-    for _, m in ipairs(self.Modules) do
-        if m.Enabled and m.Category and not self.ArrayListHide[m.Category.Name] then
-            local text = self.ArrayListLowercase and m.Name:lower() or m.Name
-            local w = #text
-            pcall(function() w = TextService:GetTextSize(text, 14, Enum.Font.Montserrat, Vector2.new(1000, 100)).X end)
-            list[#list + 1] = { text = text, w = w }
+    for m, r in pairs(rows) do
+        if not want[m] then
+            rows[m] = nil
+            if self._arrayOn then
+                tween(r.frame, 0.18, { Position = UDim2.new(1, 170, 0, r.frame.Position.Y.Offset) })
+                task.delay(0.2, function() r.frame:Destroy() end)
+            else
+                r.frame:Destroy()
+            end
         end
     end
-    table.sort(list, function(a, b) return a.w > b.w end)
-    for i, e in ipairs(list) do
-        local row = create("Frame", {
-            Size = UDim2.fromOffset(0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundColor3 = Color3.fromRGB(10, 10, 12),
-            BackgroundTransparency = 0.35, BorderSizePixel = 0, LayoutOrder = i, Parent = frame,
-        })
-        padding(row, 6, 2, 9, 2)
-        local lbl = newText("TextLabel", {
-            Size = UDim2.fromOffset(0, 16), AutomaticSize = Enum.AutomaticSize.X, Text = e.text, TextSize = 14,
-            TextColor3 = P.White, Parent = row,
-        }, "SemiBold")
-        local tg = create("UIGradient", { Parent = lbl })
-        self:BindGradient(tg, 0.8, true)
-        local bar = create("Frame", {
-            AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 9, 0, -2), Size = UDim2.new(0, 2, 1, 4),
-            BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = row,
-        })
-        local bg = create("UIGradient", { Rotation = 90, Parent = bar })
-        self:BindGradient(bg, 0.8, true)
+    table.sort(order, function(a, b)
+        if a.w ~= b.w then return a.w > b.w end
+        return a.m.Name < b.m.Name
+    end)
+    local off = self.ArrayListOffset or 2
+    for i, e in ipairs(order) do
+        local r = rows[e.m]
+        local y = off + (i - 1) * ROWH
+        if not r then
+            r = self:_newArrayRow(frame, e.m, e.text)
+            rows[e.m] = r
+            r.frame.Position = UDim2.new(1, 170, 0, y)
+        end
+        r.index = i
+        if r.label.Text ~= e.text then r.label.Text = e.text end
+        glowShow(r.glow, self.ArrayListGlow ~= false, 0.15)
+        tween(r.frame, 0.2, { Position = UDim2.new(1, -off, 0, y) })
+    end
+    self:_refreshKeybinds()
+end
+
+-- text/bar colours run down the list (like ColorHelper.getColor(-y) in the original)
+function Library:_tickArray()
+    local rows = self._arrayRows
+    if not rows then return end
+    for _, r in pairs(rows) do
+        local c = self:ColorAt(r.index * 0.07)
+        r.label.TextColor3 = c
+        r.bar.BackgroundColor3 = c
     end
 end
 
+-- ───────────────────────────── Watermark ─────────────────────────────
 function Library:SetWatermark(state, text)
     self._wmOn = state and true or false
     if text then self._wmText = text end
     local hud = self:_hudGui()
     if not self._wm or not self._wm.Parent then
-        local f = create("Frame", {
-            Name = "Watermark", Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(0, 26), AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundColor3 = Color3.fromRGB(13, 13, 15), BackgroundTransparency = 0.12, BorderSizePixel = 0, Parent = hud,
+        local root = create("Frame", {
+            Name = "Watermark", Position = UDim2.fromOffset(6, 6), Size = UDim2.fromOffset(0, 28),
+            AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1, Parent = hud,
         })
-        corner(f, 8)
-        padding(f, 10, 0, 10, 0)
-        local st = stroke(f, P.White, 1, 0.2)
-        local g = create("UIGradient", { Rotation = 0, Parent = st })
-        self:BindGradient(g, 0.8, true)
+        makeGlow(root, { Spread = 16, Transparency = 0.3 })
+        local card = create("Frame", {
+            Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = Color3.fromRGB(9, 9, 12),
+            BackgroundTransparency = 0.08, BorderSizePixel = 0, ZIndex = 1, Parent = root,
+        })
+        corner(card, 8)
+        local st = stroke(card, P.White, 1, 0.45)
+        local sg = create("UIGradient", { Parent = st })
+        self:BindGradient(sg, 0.8, true)
+        local tint = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BackgroundTransparency = 0.88, BorderSizePixel = 0, ZIndex = 1, Parent = card })
+        corner(tint, 8)
+        local tg = create("UIGradient", { Parent = tint })
+        self:BindGradient(tg, 0.8, true)
         self._wmLabel = newText("TextLabel", {
-            Size = UDim2.fromOffset(0, 26), AutomaticSize = Enum.AutomaticSize.X, TextSize = 12, Parent = f,
+            Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, TextSize = 13, RichText = true,
+            ZIndex = 2, Parent = card,
         }, "SemiBold")
-        self._wm = f
-        self:MakeDraggable(f, f, function() return Library.Visible end)
+        padding(self._wmLabel, 10, 0, 10, 0)
+        self._wm = root
+        self:_registerWidget("Watermark", root, card)
     end
     self._wm.Visible = self._wmOn
     self:_updateWatermark()
@@ -2113,13 +2227,178 @@ end
 
 function Library:_updateWatermark()
     if not (self._wm and self._wm.Parent and self._wmOn) then return end
-    local ping = 0
-    pcall(function()
-        ping = math.floor(svc("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
-    end)
-    local txt = self._wmText or ((self.Window and self.Window.Title) or "Celestial")
-    local playerName = LocalPlayer and LocalPlayer.Name or "Player"
-    self._wmLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms", txt, playerName, self.FPS or 60, ping)
+    local title = tostring(self._wmText or ((self.Window and self.Window.Title) or "Celestial")):upper()
+    local sep = ' <font color="#8d8d99">»</font> '
+    local parts = {
+        string.format('<font color="#%s">%s</font>', self:ColorAt(0):ToHex(), title),
+        LocalPlayer and LocalPlayer.Name or "Player",
+        "UID: " .. tostring(LocalPlayer and LocalPlayer.UserId or 0),
+        os.date("%I:%M %p"),
+    }
+    self._wmLabel.Text = table.concat(parts, sep)
+end
+
+-- ───────────────────────────── Keybinds widget (HUD → "Бинды модулей") ─────────────────────────────
+function Library:_keybindsWidget()
+    if self._kbw and self._kbw.Frame.Parent then return self._kbw end
+    self._kbw = self:CreateHudWidget({ Name = "Keybinds", Title = "Keybinds", Width = 150, Style = "pill", Position = UDim2.fromOffset(24, 260) })
+    return self._kbw
+end
+
+function Library:_refreshKeybinds()
+    local S = self.HudState
+    if not (S.Enabled and S.ModuleBinds) then
+        if self._kbw and self._kbw.Frame.Parent then self._kbw:SetShown(false) end
+        return
+    end
+    local list = {}
+    for _, m in ipairs(self.Modules) do
+        if m.Enabled and m.Bind and m.Category then
+            list[#list + 1] = { Text = m.Name, Right = "[" .. keyName(m.Bind) .. "]", Color = P.Text, RightColor = P.Text }
+        end
+    end
+    local w = self:_keybindsWidget()
+    w:SetEntries(list)
+    w:SetShown(#list > 0 or self.Visible == true)
+end
+
+-- ───────────────────────────── Info (Coords / BPS / FPS / TPS, bottom-left) ─────────────────────────────
+function Library:_infoWidget()
+    if self._info and self._info.Parent then return self._info end
+    local root = create("Frame", {
+        Name = "Info", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 6, 1, -6),
+        Size = UDim2.fromOffset(0, 0), AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, Parent = self:_hudGui(),
+    })
+    self._infoLabel = newText("TextLabel", {
+        Size = UDim2.fromOffset(0, 0), AutomaticSize = Enum.AutomaticSize.XY, TextSize = 14, RichText = true,
+        TextYAlignment = Enum.TextYAlignment.Bottom, TextStrokeTransparency = 0.55, TextStrokeColor3 = Color3.new(0, 0, 0),
+        Parent = root,
+    }, "SemiBold")
+    self._info = root
+    self:_registerWidget("Info", root, root)
+    return root
+end
+
+function Library:_tickInfo()
+    local S = self.HudState
+    local on = S.Enabled and (S.Coords or S.Fps or S.Bps or S.Tps)
+    if not on then
+        if self._info and self._info.Parent then self._info.Visible = false end
+        return
+    end
+    local root = self:_infoWidget()
+    root.Visible = true
+    local now = os.clock()
+    if now - (self._infoT or 0) < 0.12 then return end
+    self._infoT = now
+    local lines = {}
+    local function add(i, label, value)
+        lines[#lines + 1] = string.format('<font color="#%s">%s</font> <font color="#a8a8b3">%s</font>',
+            self:ColorAt(i * 0.07):ToHex(), label, value)
+    end
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    -- original draws Coords at the bottom and goes upwards: top→bottom is TPS, FPS, BPS, Coords
+    if S.Tps then
+        local tps = 20
+        pcall(function() tps = math.clamp(workspace:GetRealPhysicsFPS() / 60 * 20, 0, 20) end)
+        add(3, "TPS:", string.format("%.1f", tps))
+    end
+    if S.Fps then add(2, "FPS:", tostring(self.FPS or 60)) end
+    if S.Bps then
+        local v = hrp and hrp.AssemblyLinearVelocity or Vector3.zero
+        add(1, "BPS:", string.format("%.2f", Vector3.new(v.X, 0, v.Z).Magnitude / self.StudsPerBlock))
+    end
+    if S.Coords then
+        local p = hrp and hrp.Position or Vector3.zero
+        add(0, "Coords:", string.format("%d %d %d", p.X, p.Y, p.Z))
+    end
+    self._infoLabel.Text = table.concat(lines, "\n")
+end
+
+function Library:_applyHud()
+    local S = self.HudState
+    self:SetWatermark(S.Enabled and S.Watermark)
+    self:_refreshKeybinds()
+    self:_tickInfo()
+end
+
+-- ───────────────────────────── linking modules to the HUD ─────────────────────────────
+local function findSettingIn(m, name, group)
+    for _, st in ipairs(m.Settings) do
+        if st.Name == name and (not group or (st.Parent and st.Parent.Name == group)) then return st end
+    end
+end
+
+-- link the "HUD" module (groups Ватермарк / Бинды модулей / Информация ...) to the real HUD
+function Library:LinkHud(m)
+    local S = self.HudState
+    local function bind(group, name, key)
+        local st = findSettingIn(m, name, group)
+        if not st then return end
+        S[key] = st:Get()
+        st:OnChanged(function(v) S[key] = v self:_applyHud() end, "hud_" .. key)
+    end
+    bind("Ватермарк", "Включено", "Watermark")
+    bind("Бинды модулей", "Включено", "ModuleBinds")
+    bind("Информация", "Координаты", "Coords")
+    bind("Информация", "Фпс", "Fps")
+    bind("Информация", "Бпс", "Bps")
+    bind("Информация", "Тпс", "Tps")
+    S.Enabled = m.Enabled
+    m:OnToggle(function(on) S.Enabled = on self:_applyHud() end)
+    self:_applyHud()
+end
+
+function Library:LinkArrayList(m)
+    local cats = findSettingIn(m, "Категории")
+    local function syncCats()
+        local hide = {}
+        for _, n in ipairs(cats.Options) do if not cats.Value[n] then hide[n] = true end end
+        self.ArrayListHide = hide
+        self:_refreshArrayList()
+    end
+    if cats then cats:OnChanged(syncCats, "arr") syncCats() end
+    local low = findSettingIn(m, "Маленькие буквы")
+    if low then
+        self.ArrayListLowercase = low:Get()
+        low:OnChanged(function(v) self.ArrayListLowercase = v self:_refreshArrayList() end, "arr")
+    end
+    local gl = findSettingIn(m, "Свечение")
+    if gl then
+        self.ArrayListGlow = gl:Get()
+        gl:OnChanged(function(v) self.ArrayListGlow = v self:_refreshArrayList() end, "arr")
+    end
+    local off = findSettingIn(m, "Смещение")
+    if off then
+        self.ArrayListOffset = off:Get()
+        off:OnChanged(function(v) self.ArrayListOffset = v self:_refreshArrayList() end, "arr")
+    end
+    m:OnToggle(function(on) self:SetArrayList(on) end)
+    self:SetArrayList(m.Enabled)
+end
+
+function Library:LinkNotifications(m)
+    local toggle = findSettingIn(m, "Включено", "Переключение модулей")
+    local function recompute() self.NotifyOnToggle = m.Enabled and (not toggle or toggle:Get()) end
+    if toggle then toggle:OnChanged(recompute, "ntf") end
+    m:OnToggle(recompute)
+    recompute()
+    local snd = findSettingIn(m, "Воспроизводить звук")
+    if snd then
+        self.NotifySound = snd:Get()
+        snd:OnChanged(function(v) self.NotifySound = v end, "ntf")
+    end
+    local pitch = findSettingIn(m, "Питч звука")
+    if pitch then
+        self.SoundPitch = pitch:Get()
+        pitch:OnChanged(function(v) self.SoundPitch = v end, "ntf")
+    end
+end
+
+-- show/hide a HUD widget together with a module (e.g. Staff Viewer)
+function Library:LinkWidget(m, widget)
+    m:OnToggle(function(on) widget:SetShown(on) end)
+    widget:SetShown(m.Enabled)
 end
 
 function Library:_registerWidget(name, root, handle)
@@ -2149,18 +2428,33 @@ function Library:CreateHudWidget(o)
     corner(card, 10)
     stroke(card, P.Stroke, 1, 0.45)
     listLayout(card, 0)
-    local head = create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 0, Parent = card })
-    newText("TextLabel", {
-        Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), Text = o.Title or name, TextSize = 12,
-        Parent = head,
-    }, "Bold")
-    local line = create("Frame", {
-        AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, 0), Size = UDim2.new(1, -16, 0, 2),
-        BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = head,
-    })
-    corner(line, 1)
-    local lg = create("UIGradient", { Parent = line })
-    self:BindGradient(lg, 0.8, true)
+    local titleLabel
+    local head
+    if o.Style == "pill" then
+        head = create("Frame", { Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = 0, Parent = card })
+        padding(head, 4, 4, 4, 0)
+        local fillH = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = head })
+        corner(fillH, 8)
+        local hg = create("UIGradient", { Rotation = 0, Parent = fillH })
+        self:BindGradient(hg, 0.8, true)
+        titleLabel = newText("TextLabel", {
+            Size = UDim2.fromScale(1, 1), Text = o.Title or name, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center,
+            Parent = fillH,
+        }, "Bold")
+    else
+        head = create("Frame", { Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1, LayoutOrder = 0, Parent = card })
+        titleLabel = newText("TextLabel", {
+            Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), Text = o.Title or name, TextSize = 12,
+            Parent = head,
+        }, "Bold")
+        local line = create("Frame", {
+            AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 8, 1, 0), Size = UDim2.new(1, -16, 0, 2),
+            BackgroundColor3 = P.White, BorderSizePixel = 0, Parent = head,
+        })
+        corner(line, 1)
+        local lg = create("UIGradient", { Parent = line })
+        self:BindGradient(lg, 0.8, true)
+    end
     local body = create("Frame", {
         Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 1, Parent = card,
     })
@@ -2174,19 +2468,19 @@ function Library:CreateHudWidget(o)
         for i, e in ipairs(list) do
             local row = create("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, LayoutOrder = i, Parent = body })
             newText("TextLabel", {
-                Size = UDim2.new(1, e.Right and -50 or 0, 1, 0), Text = tostring(e.Text), TextSize = 12,
+                Size = UDim2.new(1, e.Right and -66 or 0, 1, 0), Text = tostring(e.Text), TextSize = 12,
                 TextColor3 = e.Color or P.Text, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row,
             }, "Medium")
             if e.Right then
                 newText("TextLabel", {
-                    AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 48, 1, 0),
+                    AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 64, 1, 0),
                     Text = tostring(e.Right), TextSize = 11, TextColor3 = e.RightColor or P.Sub,
                     TextXAlignment = Enum.TextXAlignment.Right, Parent = row,
                 }, "SemiBold")
             end
         end
     end
-    function w:SetTitle(t) head:FindFirstChildOfClass("TextLabel").Text = t end
+    function w:SetTitle(t) titleLabel.Text = t end
     function w:SetShown(state)
         self.Shown = state and true or false
         tween(card, 0.18, { GroupTransparency = state and 0 or 1 })
@@ -2292,6 +2586,7 @@ end
 
 -- shows a preview of the target hud while the menu is open so it can be dragged
 function Library:_hudPreview(state)
+    self:_refreshKeybinds()
     local t = self._target
     if not (t and t.Frame.Parent) then return end
     if state then
@@ -2477,6 +2772,8 @@ function Library:_start()
             acc = 0
             if self.Visible then self:_updateSet(self._grads) end
             if next(self._hudGrads) then self:_updateSet(self._hudGrads) end
+            self:_tickArray()
+            self:_tickInfo()
         end
         frames = frames + 1
         fpsAcc = fpsAcc + dt
